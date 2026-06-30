@@ -1,0 +1,41 @@
+from django.urls import path
+
+from .views import (
+    LocationLogListView,
+    TechnicianAttendanceDetailView,
+    TechnicianAttendanceListCreateView,
+    TechnicianDetailView,
+    TechnicianLocationPingView,
+    TechnicianListCreateView,
+    TechnicianLocationTrackingView,
+    TechnicianMeView,
+    TechnicianLocationsByTechnicianView,
+    TechnicianOnlineStatusView,
+    TechnicianPermissionsView,
+    TechnicianRestoreView,
+    TechnicianShiftListView,
+    TechnicianWorkingHoursSummaryView,
+    TechnicianShiftStartView,
+    TechnicianShiftStopView,
+    TechnicianStatusListView,
+)
+
+urlpatterns = [
+    path("statuses/", TechnicianStatusListView.as_view(), name="technician-status-list"),
+    path("technician-list/", TechnicianListCreateView.as_view(), name="technician-list"),
+    path("technician/<uuid:technician_id>/", TechnicianDetailView.as_view(), name="technician-detail"),
+    path("technician/<uuid:technician_id>/restore/", TechnicianRestoreView.as_view(), name="technician-restore"),
+    path("technician/<uuid:technician_id>/permissions/", TechnicianPermissionsView.as_view(), name="technician-permissions"),
+    path("technician/<uuid:technician_id>/locations/", TechnicianLocationsByTechnicianView.as_view(), name="technician-locations"),
+    path("me/", TechnicianMeView.as_view(), name="technician-me"),
+    path("me/location-ping/", TechnicianLocationPingView.as_view(), name="technician-location-ping"),
+    path("location-tracking/", TechnicianLocationTrackingView.as_view(), name="technician-location-tracking"),
+    path("location-logs/", LocationLogListView.as_view(), name="technician-location-logs"),
+    path("me/status/", TechnicianOnlineStatusView.as_view(), name="technician-online-status"),
+    path("shifts/", TechnicianShiftListView.as_view(), name="technician-shift-list"),
+    path("working-hours-summary/", TechnicianWorkingHoursSummaryView.as_view(), name="technician-working-hours-summary"),
+    path("shifts/start/", TechnicianShiftStartView.as_view(), name="technician-shift-start"),
+    path("shifts/stop/", TechnicianShiftStopView.as_view(), name="technician-shift-stop"),
+    path("attendance/", TechnicianAttendanceListCreateView.as_view(), name="technician-attendance-list"),
+    path("attendance/<uuid:pk>/", TechnicianAttendanceDetailView.as_view(), name="technician-attendance-detail"),
+]
