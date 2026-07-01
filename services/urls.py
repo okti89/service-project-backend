@@ -4,12 +4,14 @@ from .views import (BrandListCreateView, ModelListCreateView,
                     AdminServiceListCreateView, AdminServiceRetrieveUpdateDestroyView, DeviceTypeListCreateView, PaymentMethodListCreateView,
                     ServiceOperationsListCreateView, ServiceOperationTemplateListCreateView, ServicePaymentListCreateView, ServicePaymentRefundView, ServicePhotoListCreateView, ServiceSignatureListCreateView,
                     PublicServiceListView, PublicServiceDetailView, PublicServiceFormPDFView,
-                    ServiceFormPDFView, ServiceWarrantyPDFView, ServiceFormEmailView, ServiceWhatsAppStatusLinkView)    
+                    ServiceFormPDFView, ServiceWarrantyPDFView, ServiceFormEmailView, ServiceWhatsAppStatusLinkView, ServiceStatusListView)
 urlpatterns = [
     path('device-types/', DeviceTypeListCreateView.as_view(), name='device-type-list-create'),
     path('brands/', BrandListCreateView.as_view(), name='brand-list-create'),
     path('models/', ModelListCreateView.as_view(), name='model-list-create'),
     path('payment-methods/', PaymentMethodListCreateView.as_view(), name='payment-method-list-create'),
+    path('service-statuses/', ServiceStatusListView.as_view(), name='service-status-list'),
+
     path('service-operations/', ServiceOperationsListCreateView.as_view(), name='service-operation-list-create'),
     path('service-operation-templates/', ServiceOperationTemplateListCreateView.as_view(), name='service-operation-template-list-create'),
     path('service-payments/', ServicePaymentListCreateView.as_view(), name='service-payment-list-create'),

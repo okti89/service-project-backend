@@ -52,6 +52,7 @@ from .serializers import (
     ServicePhotoSerializer,
     ServiceSerializer,
     ServiceSignatureSerializer,
+    ServiceStatusSerializer,
     WarrantyCertificateSerializer,
 )
 from .models import ServiceTimeline
@@ -105,10 +106,10 @@ def _status_label(value):
     mapping = {
         'new': 'Yeni',
         'assigned': 'Atandi',
-        'in_progress': 'Islemde',
+        'in_progress': 'İşlemde',
         'postponed': 'Ertelendi',
         'completed': 'Tamamlandi',
-        'cancelled': 'Iptal',
+        'cancelled': 'İptal',
     }
     return mapping.get(value, str(value or '-'))
 
@@ -244,6 +245,11 @@ def _build_download_disposition(filename):
     ascii_fallback = f"{safe_stem}.{ext}" if dot else f"{safe_stem}.pdf"
     encoded_filename = quote(filename)
     return f'attachment; filename="{ascii_fallback}"; filename*=UTF-8\'\'{encoded_filename}'
+
+
+def _build_inline_disposition(filename):
+    encoded_filename = quote(filename)
+    return f'inline; filename="{filename}"; filename*=UTF-8\'\'{encoded_filename}'
 
 
 def _build_service_status_whatsapp_url(service, new_status=None, request=None, status_changed=False, schedule_changed=False, scheduled_date=None):
@@ -470,6 +476,17 @@ class DeviceTypeListCreateView(SerializerAPIView):
             return Response({"error": "Cihaz tipi bulunamadı"}, status=status.HTTP_404_NOT_FOUND)
         device_type.delete()
         return Response({"message": "Cihaz tipi başarıyla silindi"}, status=status.HTTP_200_OK)
+
+class ServiceStatusListView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        tenant = _request_tenant(request)
+        statuses = ServiceStatus.objects.filter(is_active=True).filter(
+            Q(tenant=tenant) | Q(tenant__isnull=True)
+        ).order_by('sort_order', 'name')
+        serializer = ServiceStatusSerializer(statuses.distinct(), many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 class ModelListCreateView(SerializerAPIView):
     serializer_class = ModelSerializer
@@ -1223,7 +1240,11 @@ class ServiceWarrantyPDFView(APIView):
         pdf_buffer = generate_warranty_certificate_pdf(warranty)
         filename = f"Garanti_Belgesi_{service.receipt_number or str(service.id)[:8]}.pdf"
         response = HttpResponse(pdf_buffer.getvalue(), content_type='application/pdf')
-        response['Content-Disposition'] = _build_download_disposition(filename)
+        disposition = request.query_params.get('disposition', 'attachment').lower()
+        if disposition == 'inline':
+            response['Content-Disposition'] = _build_inline_disposition(filename)
+        else:
+            response['Content-Disposition'] = _build_download_disposition(filename)
         return response
 
 
@@ -1347,5 +1368,3 @@ class PublicServiceFormPDFView(APIView):
         response = HttpResponse(pdf_buffer.getvalue(), content_type='application/pdf')
         response['Content-Disposition'] = _build_download_disposition(filename)
         return response
-
-

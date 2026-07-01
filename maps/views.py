@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 # alternatiflere gider. Tenant bazli kota her durumda uygulanir.
 PHOTON_URL = "https://photon.komoot.io/api/"
 PHOTON_AUTOCOMPLETE_URL = "https://photon.komoot.io/api/"  # ayni endpoint
+PHOTON_REVERSE_URL = "https://photon.komoot.io/reverse"
 GOOGLE_GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 GOOGLE_DIRECTIONS_URL = "https://maps.googleapis.com/maps/api/directions/json"
 GOOGLE_PLACES_AUTOCOMPLETE_URL = "https://maps.googleapis.com/maps/api/place/autocomplete/json"
@@ -144,38 +145,164 @@ def _google_geocode(query: str, key: str) -> dict | None:
     }
 
 
-@api_view(["POST"])
+# Reverse yon (koordinat -> adres) provider'lari. Yon tespiti maps_geocode
+# icinde yapilir, bu fonksiyonlar sadece dis servislere istek atar.
+def _photon_reverse_geocode(latitude: float, longitude: float) -> dict | None:
+    try:
+        resp = requests.get(
+            PHOTON_REVERSE_URL,
+            params={"lon": longitude, "lat": latitude, "limit": 1},
+            headers={"Accept-Language": "tr-TR,tr;q=0.9,en;q=0.8"},
+            timeout=8,
+        )
+    except requests.RequestException as exc:
+        logger.warning("Photon reverse network error: %s", exc)
+        return None
+    if resp.status_code != 200:
+        return None
+    data = resp.json()
+    features = (data or {}).get("features") or []
+    if not features:
+        return None
+    feature = features[0]
+    props = feature.get("properties") or {}
+    display_name = ", ".join(
+        filter(
+            None,
+            [
+                props.get("name"),
+                props.get("street"),
+                props.get("housenumber"),
+                props.get("city") or props.get("town") or props.get("village"),
+                props.get("state"),
+                props.get("country"),
+            ],
+        )
+    )
+    if not display_name:
+        display_name = f"{latitude}, {longitude}"
+    return {
+        "latitude": float(latitude),
+        "longitude": float(longitude),
+        "display_name": display_name,
+        "provider": "photon",
+    }
+
+
+def _google_reverse_geocode(latitude: float, longitude: float, key: str) -> dict | None:
+    try:
+        resp = requests.get(
+            GOOGLE_GEOCODE_URL,
+            params={"latlng": f"{latitude},{longitude}", "key": key, "language": "tr"},
+            timeout=8,
+        )
+    except requests.RequestException as exc:
+        logger.warning("Google reverse network error: %s", exc)
+        return None
+    if resp.status_code != 200:
+        return None
+    data = resp.json()
+    results = data.get("results") or []
+    if not results or data.get("status") not in ("OK", "ZERO_RESULTS"):
+        return None
+    first = results[0]
+    return {
+        "latitude": float(latitude),
+        "longitude": float(longitude),
+        "display_name": first.get("formatted_address") or f"{latitude}, {longitude}",
+        "provider": "google",
+    }
+
+
+@api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def maps_geocode(request):
-    """POST { address: "..." } -> { latitude, longitude, display_name, quota }"""
+    """Tek endpoint - iki yön:
+
+    Forward  (adres -> koordinat):
+      POST { address: "..." }
+    Reverse  (koordinat -> adres):
+      GET  ?lat=41.0082&lon=28.9784
+      POST { latitude: 41.0082, longitude: 28.9784 }
+
+    Her iki yon ayni 'geocode' api type kotasini kullanir,
+    ayni Google → Photon fallback zincirini paylasir,
+    ayni 7 gunluk tenant-scoped cache'e yazilir.
+
+    Basarili olursa: { display_name, latitude, longitude, provider, quota, cached, direction }
+    """
     tenant = getattr(request.user, "tenant", None)
     if tenant is None:
         return Response({"error": "TENANT_MISSING"}, status=status.HTTP_403_FORBIDDEN)
 
-    address = (request.data.get("address") or "").strip()
-    if not address:
+    # Yon tespiti: once reverse (lat/lon), sonra forward (address)
+    direction = None
+    address = None
+    latitude = None
+    longitude = None
+
+    if request.method == "GET":
+        lat_param = (request.GET.get("lat") or "").strip()
+        lon_param = (request.GET.get("lon") or request.GET.get("lng") or "").strip()
+        addr_param = (request.GET.get("address") or "").strip()
+    else:
+        lat_param = str(request.data.get("lat") or request.data.get("latitude") or "").strip()
+        lon_param = str(request.data.get("lon") or request.data.get("lng") or request.data.get("longitude") or "").strip()
+        addr_param = (request.data.get("address") or "").strip()
+
+    if lat_param and lon_param:
+        try:
+            latitude = float(lat_param)
+            longitude = float(lon_param)
+            direction = "reverse"
+        except (TypeError, ValueError):
+            return Response({"error": "EMPTY"}, status=400)
+    elif addr_param:
+        address = addr_param
+        direction = "forward"
+    else:
         return Response({"error": "EMPTY"}, status=400)
 
+    # Cache key: yon + input
+    if direction == "forward":
+        cache_input = address
+    else:
+        # Coord hassasiyeti 5 hane (~1m) - yakin noktalar ayni sonucu verir
+        cache_input = f"rev:{latitude:.5f},{longitude:.5f}"
+
+    # Cache-first: oncelikle cache kontrol et, cache hit'te kota ARTIRMA
+    cache_key = _make_cache_key([str(tenant.pk), TenantMapQuota.API_GEOCODE, cache_input])
+    cached = MapCache.objects.filter(tenant=tenant, cache_key=cache_key).first()
+    if cached and not cached.is_expired():
+        try:
+            usage = current_usage(tenant, api_type=TenantMapQuota.API_GEOCODE)
+        except Exception:
+            usage = {"used": 0, "limit": 0, "remaining": 0}
+        return Response(
+            {**cached.result, "quota": usage, "cached": True,
+             "from_cache_no_charge": True, "direction": direction}
+        )
+
+    # Cache miss: kota kontrolu + artisi
     try:
         quota = check_and_increment(tenant, TenantMapQuota.API_GEOCODE, cost=1)
     except Exception:
         return _throttled_response(tenant, TenantMapQuota.API_GEOCODE)
 
-    cache_key = _make_cache_key([str(tenant.pk), TenantMapQuota.API_GEOCODE, address])
-    cached = MapCache.objects.filter(tenant=tenant, cache_key=cache_key).first()
-    if cached and not cached.is_expired():
-        return Response({**cached.result, "quota": quota, "cached": True})
-
-    result = None
+    # Provider: Google (key varsa) → Photon fallback
     google_key = _google_key()
-    if google_key:
-        result = _google_geocode(address, google_key)
-    if not result:
-        result = _photon_geocode(address)
+    if direction == "forward":
+        result = _google_geocode(address, google_key) if google_key else None
+        if not result:
+            result = _photon_geocode(address)
+    else:
+        result = _google_reverse_geocode(latitude, longitude, google_key) if google_key else None
+        if not result:
+            result = _photon_reverse_geocode(latitude, longitude)
 
     if not result:
         return Response(
-            {"error": "NOT_FOUND", "quota": quota},
+            {"error": "NOT_FOUND", "quota": quota, "direction": direction},
             status=status.HTTP_404_NOT_FOUND,
         )
 
@@ -184,7 +311,7 @@ def maps_geocode(request):
         cache_key=cache_key,
         defaults={"result": result, "ttl_days": 7},
     )
-    return Response({**result, "quota": quota, "cached": False})
+    return Response({**result, "quota": quota, "cached": False, "direction": direction})
 
 
 # ---------------------------------------------------------------------------
