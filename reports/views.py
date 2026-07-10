@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from decimal import Decimal
 
+# Reports views configuration
 from django.db.models import Q, Sum
 from django.db.models.functions import TruncMonth
 from django.http import FileResponse

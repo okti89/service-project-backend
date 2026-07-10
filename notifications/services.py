@@ -1,7 +1,25 @@
+import logging
+
 from django.db import transaction
 
 from .models import Notification
 from .utils import send_bulk_expo_push_notification, send_expo_push_notification
+
+logger = logging.getLogger(__name__)
+
+
+def _log_push_result(scope, result, extra=None):
+    payload = result or {}
+    status = payload.get("status")
+    token_count = payload.get("token_count")
+    message = payload.get("message")
+    details = extra or {}
+
+    if status in {"failed", "request_failed", "invalid_response"}:
+        logger.warning("%s push result status=%s token_count=%s message=%s extra=%s", scope, status, token_count, message, details)
+        return
+
+    logger.info("%s push result status=%s token_count=%s extra=%s", scope, status, token_count, details)
 
 
 def _build_push_data(related_id=None, related_screen=None):
@@ -30,14 +48,15 @@ def create_notification(user, title, message, related_id=None, related_screen=No
 
     if getattr(user, "is_active", False):
         try:
-            send_expo_push_notification(
+            push_result = send_expo_push_notification(
                 user=user,
                 title=title,
                 body=message,
                 data=push_data,
             )
+            _log_push_result("single", push_result, {"user_id": getattr(user, "id", None)})
         except Exception:
-            pass
+            logger.exception("Single push send raised an unexpected error for user=%s", getattr(user, "id", None))
 
     return notification
 
@@ -82,13 +101,14 @@ def create_bulk_notification(
 
     if send_push:
         try:
-            send_bulk_expo_push_notification(
+            push_result = send_bulk_expo_push_notification(
                 users=users,
                 title=title,
                 body=message,
                 data=push_data,
             )
+            _log_push_result("bulk", push_result, {"user_count": len(users), "tenant_id": getattr(tenant, "id", None)})
         except Exception:
-            pass
+            logger.exception("Bulk push send raised an unexpected error for user_count=%s tenant_id=%s", len(users), getattr(tenant, "id", None))
 
     return notifications

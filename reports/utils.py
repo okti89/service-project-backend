@@ -80,6 +80,17 @@ def _safe_float(value):
         return 0.0
 
 
+def _format_currency(value):
+    val_float = _safe_float(value)
+    parts = f"{val_float:.2f}".split('.')
+    int_part = ""
+    for idx, char in enumerate(reversed(parts[0])):
+        if idx > 0 and idx % 3 == 0:
+            int_part = "." + int_part
+        int_part = char + int_part
+    return f"{int_part},{parts[1]} TL"
+
+
 def _get_company_info(tenant=None):
     config_qs = CompanyConfig.objects.all()
     if tenant is not None:
@@ -204,9 +215,9 @@ def generate_general_performance_pdf(data, tenant=None):
         ['İptal Edilen Servisler', f"{data.get('total_cancelled_services', 0)} Adet"],
         ['', ''],
         ['Finansal Metrikler', ''],
-        ['Toplam Tahsilat (Brüt Gelir)', f'{total_revenue:.2f} TL'],
-        ['Toplam Gider', f'{total_expenses:.2f} TL'],
-        ['Net Kâr', f'{total_profit:.2f} TL'],
+        ['Toplam Tahsilat (Brüt Gelir)', _format_currency(total_revenue)],
+        ['Toplam Gider', _format_currency(total_expenses)],
+        ['Net Kâr', _format_currency(total_profit)],
     ]
 
     table = Table(table_data, colWidths=[350, 165])
@@ -302,14 +313,21 @@ def generate_technician_performance_pdf(data_list, tenant=None):
     table_data = [['Teknisyen Adı', 'Tamamlanan İş', 'Kazandırılan Ciro', 'Performans %']]
     total_revenue = sum(_safe_float(row.get('total_revenue_generated')) for row in data_list) or 1.0
 
-    for row in data_list:
+    # Ciroya göre azalan sıralama yapalım
+    sorted_data = sorted(
+        data_list,
+        key=lambda x: _safe_float(x.get('total_revenue_generated')),
+        reverse=True
+    )
+
+    for row in sorted_data:
         revenue = _safe_float(row.get('total_revenue_generated'))
         percentage = (revenue / total_revenue) * 100
         table_data.append(
             [
                 str(row.get('technician_name', '-')),
                 str(row.get('completed_services_count', 0)),
-                f'{revenue:.2f} TL',
+                _format_currency(revenue),
                 f'% {percentage:.1f}',
             ]
         )

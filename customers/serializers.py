@@ -14,22 +14,18 @@ class CustomerSerializer(serializers.ModelSerializer):
     @staticmethod
     def normalize_phone(value):
         digits = ''.join(ch for ch in str(value or '') if ch.isdigit())
-
         if not digits:
             return ''
 
-        # TR format normalize
-        if digits.startswith('00'):
+        if digits.startswith('90') and len(digits) > 10:
             digits = digits[2:]
+        elif digits.startswith('090') and len(digits) > 11:
+            digits = digits[3:]
 
-        if digits.startswith('90'):
-            pass
-        elif digits.startswith('0'):
-            digits = '90' + digits[1:]
-        elif len(digits) == 10:
-            digits = '90' + digits
+        if not digits.startswith('0') and len(digits) == 10:
+            digits = '0' + digits
 
-        return f'+{digits}'
+        return digits
 
     def validate(self, attrs):
         request = self.context.get("request")

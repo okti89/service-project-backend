@@ -27,9 +27,10 @@ class Technician(models.Model):
     class Meta:
         verbose_name = "Teknisyen Profili"
         verbose_name_plural = "Teknisyen Profilleri"
-    
+        
     def __str__(self):
         return f"{self.user.get_full_name()} - Teknisyen"
+    
 class TechnicianLocation(models.Model):
     tenant = models.ForeignKey('tenants.Tenant', on_delete=models.CASCADE, related_name='technician_locations', null=True, blank=True)
     technician = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='technician_locations')

@@ -232,8 +232,9 @@ class TechnicianListCreateView(APIView):
         if not include_inactive:
             queryset = queryset.filter(user__is_active=True)
 
+        from django.db.models.functions import Lower
         serializer = TechnicianListSerializer(
-            queryset.order_by("user__first_name", "user__last_name"),
+            queryset.order_by(Lower("user__first_name"), Lower("user__last_name")),
             many=True,
             context={"request": request},
         )
@@ -737,6 +738,80 @@ class TechnicianShiftListView(APIView):
             )
 
         return Response(output, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        user = request.user
+        is_admin = bool(user.is_superuser or user.is_staff or getattr(user, "user_type", "") == "admin")
+        if not is_admin:
+            raise PermissionDenied("Sadece yöneticiler manuel mesai ekleyebilir.")
+
+        technician_id = request.data.get("technician_id")
+        if not technician_id:
+            return Response({"detail": "technician_id alanı zorunludur."}, status=status.HTTP_400_BAD_REQUEST)
+
+        technician = get_object_or_404(_technician_queryset(request), id=technician_id)
+
+        date = request.data.get("date")
+        start_time = request.data.get("start_time")
+        end_time = request.data.get("end_time")
+
+        if not date or not start_time:
+            return Response({"detail": "Tarih ve başlangıç saati zorunludur."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Teknisyenin o tarihte zaten mesaisi var mı kontrol et
+        if TechnicianShift.objects.filter(technician=technician.user, date=date).exists():
+            return Response({"detail": "Bu teknisyenin seçilen tarihte zaten bir mesai kaydı bulunuyor."}, status=status.HTTP_400_BAD_REQUEST)
+
+        shift = TechnicianShift.objects.create(
+            technician=technician.user,
+            date=date,
+            start_time=start_time,
+            end_time=end_time,
+            tenant=_request_tenant(request)
+        )
+
+        serializer = TechnicianShiftSerializer(shift)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class TechnicianShiftDetailView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def put(self, request, pk):
+        user = request.user
+        is_admin = bool(user.is_superuser or user.is_staff or getattr(user, "user_type", "") == "admin")
+        if not is_admin:
+            raise PermissionDenied("Sadece yöneticiler mesai düzenleyebilir.")
+
+        shift = get_object_or_404(TechnicianShift, id=pk)
+
+        date = request.data.get("date")
+        start_time = request.data.get("start_time")
+        end_time = request.data.get("end_time")
+
+        if date:
+            # Tarih değişiyorsa ve o tarihte başka mesai varsa engelle
+            if str(date) != str(shift.date) and TechnicianShift.objects.filter(technician=shift.technician, date=date).exclude(id=shift.id).exists():
+                return Response({"detail": "Bu tarihte zaten başka bir mesai kaydı bulunuyor."}, status=status.HTTP_400_BAD_REQUEST)
+            shift.date = date
+        if start_time:
+            shift.start_time = start_time
+        if end_time:
+            shift.end_time = end_time
+
+        shift.save()
+        serializer = TechnicianShiftSerializer(shift)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def delete(self, request, pk):
+        user = request.user
+        is_admin = bool(user.is_superuser or user.is_staff or getattr(user, "user_type", "") == "admin")
+        if not is_admin:
+            raise PermissionDenied("Sadece yöneticiler mesai silebilir.")
+
+        shift = get_object_or_404(TechnicianShift, id=pk)
+        shift.delete()
+        return Response({"detail": "Mesai kaydı başarıyla silindi."}, status=status.HTTP_200_OK)
 
 
 class TechnicianWorkingHoursSummaryView(APIView):

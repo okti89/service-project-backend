@@ -48,14 +48,33 @@ class AdminLoginView(APIView):
 
 class UserListCreateAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
-    def get(self,request):
+
+    def get(self, request):
         users = User.objects.filter(tenant=request.user.tenant)
+        tab = (request.query_params.get("tab") or "").lower()
         include_inactive = request.query_params.get("include_inactive", "false").lower() == "true"
-        if not include_inactive:
+        query = (request.query_params.get("q") or "").strip()
+
+        if tab == "deleted":
+            users = users.filter(is_active=False)
+        elif tab == "all":
             users = users.filter(is_active=True)
+        elif not include_inactive:
+            users = users.filter(is_active=True)
+
+        if query:
+            users = users.filter(
+                models.Q(first_name__icontains=query)
+                | models.Q(last_name__icontains=query)
+                | models.Q(email__icontains=query)
+                | models.Q(phone_number__icontains=query)
+            )
+
+        users = users.order_by("-date_joined")
         serializer = UserSerializer(users, many=True, context={"request": request})
         return Response(serializer.data, status=status.HTTP_200_OK)
-    def post(self,request):
+
+    def post(self, request):
         serializer = UserCreateSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         serializer.save()
@@ -116,19 +135,34 @@ class UserDetailAPIView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def delete(self, request, pk):
+        """Kullanıcıyı pasife al (sadece is_active=False, approval_status değişmez)"""
         user = self.get_object(pk, request.user.tenant)
         if not user:
             return Response({"error": "Kullanıcı bulunamadı"}, status=status.HTTP_404_NOT_FOUND)
 
         user.is_active = False
-        user.approval_status = "rejected"
-        user.save(update_fields=["is_active", "approval_status"])
+        user.save(update_fields=["is_active"])
         create_notification(
             user=user,
             title="Hesabınız pasifleşti",
-            message="Hesabınız pasifleşti. Yönetici ile iletişime geçin.",
+            message="Hesabınız yönetici tarafından pasife alındı.",
         )
-        return Response({"message": "Kullanıcı pasifleşti"}, status=status.HTTP_200_OK)
+        return Response({"message": "Kullanıcı pasife alındı"}, status=status.HTTP_200_OK)
+
+    def put(self, request, pk):
+        """Pasif kullanıcıyı aktif et (sadece is_active=True, approval_status değişmez)"""
+        user = self.get_object(pk, request.user.tenant)
+        if not user:
+            return Response({"error": "Kullanıcı bulunamadı"}, status=status.HTTP_404_NOT_FOUND)
+
+        user.is_active = True
+        user.save(update_fields=["is_active"])
+        create_notification(
+            user=user,
+            title="Hesabınız aktifleşti",
+            message="Hesabınız yönetici tarafından tekrar aktif edildi. Giriş yapabilirsiniz.",
+        )
+        return Response({"message": "Kullanıcı aktif edildi"}, status=status.HTTP_200_OK)
 
 
 class UserApprovalListView(APIView):

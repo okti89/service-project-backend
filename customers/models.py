@@ -32,6 +32,18 @@ class Customer(models.Model):
             if tenant:
                 self.tenant = tenant
 
+        if self.phone_number:
+            digits = ''.join(ch for ch in str(self.phone_number) if ch.isdigit())
+            if digits:
+                if digits.startswith('90') and len(digits) > 10:
+                    digits = digits[2:]
+                elif digits.startswith('090') and len(digits) > 11:
+                    digits = digits[3:]
+                
+                if not digits.startswith('0') and len(digits) == 10:
+                    digits = '0' + digits
+                self.phone_number = digits
+
         super().save(*args, **kwargs)
 
     def __str__(self):

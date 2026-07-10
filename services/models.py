@@ -79,7 +79,11 @@ class DeviceType(models.Model):
     def __str__(self):
         return self.name
 
-
+    class Meta:
+        verbose_name = 'Cihaz Türü'
+        verbose_name_plural = 'Cihaz Türleri'
+        ordering = ['name']
+        
 class Brand(models.Model):
     tenant = models.ForeignKey('tenants.Tenant', on_delete=models.CASCADE, related_name='service_brands', null=True, blank=True)
     name = models.CharField(max_length=50, verbose_name='Marka Adı')
@@ -89,6 +93,7 @@ class Brand(models.Model):
     class Meta:
         verbose_name = 'Marka'
         verbose_name_plural = 'Markalar'
+        ordering = ['name']
 
 
 class Model(models.Model):
@@ -101,6 +106,7 @@ class Model(models.Model):
     class Meta:
         verbose_name = 'Model'
         verbose_name_plural = 'Modeller'
+        ordering = ['name']
 
 
 DEFAULT_SERVICE_STATUSES = [
@@ -298,6 +304,18 @@ class Service(models.Model):
         self._pending_service_status_code = self.status.code if self.status_id else 'new'
         if not self.receipt_number:
             self.receipt_number = self._generate_receipt_number()
+            
+        if self.customer_phone:
+            digits = ''.join(ch for ch in str(self.customer_phone) if ch.isdigit())
+            if digits:
+                if digits.startswith('90') and len(digits) > 10:
+                    digits = digits[2:]
+                elif digits.startswith('090') and len(digits) > 11:
+                    digits = digits[3:]
+                if not digits.startswith('0') and len(digits) == 10:
+                    digits = '0' + digits
+                self.customer_phone = digits
+                
         super().save(*args, **kwargs)
         self._sync_stock_for_cancel_transition(old_status)
 

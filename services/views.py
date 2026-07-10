@@ -194,9 +194,7 @@ def _resolve_public_panel_base_url(service, request=None):
 def _build_public_service_tracking_url(service, request=None):
     if not service:
         return ""
-    access_token = build_public_service_token(service)
-    query = urlencode({"access_token": access_token})
-    path = f"service-tracking/{service.id}/?{query}"
+    path = f"service-tracking/{service.id}/"
     base_url = _resolve_public_panel_base_url(service, request=request)
     if base_url:
         return urljoin(f"{base_url}/", path)
@@ -1299,20 +1297,13 @@ class PublicServiceListView(APIView):
     permission_classes = [permissions.AllowAny]
     
     def get(self, request):
-        access_token = request.query_params.get("access_token")
-        token_service_id = resolve_public_service_token(access_token)
-        if not token_service_id:
-            return Response({"detail": "Erisim tokeni eksik veya gecersizdir."}, headers={"Cache-Control": "no-store, must-revalidate"}, status=status.HTTP_403_FORBIDDEN)
-
-        token_service = Service.objects.select_related("customer").filter(id=token_service_id).first()
-        if not token_service:
-            return Response({"detail": "Token gecersiz servis kaydina ait."}, headers={"Cache-Control": "no-store, must-revalidate"}, status=status.HTTP_404_NOT_FOUND)
-        token_tenant = getattr(getattr(token_service, "customer", None), "tenant", None)
+        service_id = request.query_params.get("service_id")
+        if not service_id:
+            return Response({"detail": "Servis ID eksik."}, status=status.HTTP_400_BAD_REQUEST)
 
         services = Service.objects.select_related('customer', 'technician', 'status') \
                             .prefetch_related('items', 'items__product', 'payments', 'timeline')
-        services = services.filter(customer__tenant=token_tenant)
-        services = services.filter(id=token_service_id)
+        services = services.filter(id=service_id)
         
         search = request.query_params.get('search')
         if search:
@@ -1327,21 +1318,8 @@ class PublicServiceDetailView(APIView):
     permission_classes = [permissions.AllowAny]
     
     def get(self, request, pk):
-        access_token = request.query_params.get("access_token")
-        token_service_id = resolve_public_service_token(access_token)
-        if not token_service_id:
-            return Response({"detail": "Erisim tokeni eksik veya gecersizdir."}, headers={"Cache-Control": "no-store, must-revalidate"}, status=status.HTTP_403_FORBIDDEN)
-        if str(pk) != str(token_service_id):
-            return Response({"detail": "Erisim tokeni bu servis icin gecersiz."}, headers={"Cache-Control": "no-store, must-revalidate"}, status=status.HTTP_403_FORBIDDEN)
-
-        token_service = Service.objects.select_related("customer").filter(id=token_service_id).first()
-        if not token_service:
-            return Response({"detail": "Token gecersiz servis kaydina ait."}, headers={"Cache-Control": "no-store, must-revalidate"}, status=status.HTTP_404_NOT_FOUND)
-        token_tenant = getattr(getattr(token_service, "customer", None), "tenant", None)
-
         qs = Service.objects.select_related('customer', 'technician', 'status') \
                             .prefetch_related('items', 'items__product', 'payments', 'timeline')
-        qs = qs.filter(customer__tenant=token_tenant)
         try:
             service = qs.get(id=pk)
         except Service.DoesNotExist:
@@ -1353,11 +1331,6 @@ class PublicServiceFormPDFView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, pk):
-        access_token = request.query_params.get("access_token")
-        token_service_id = resolve_public_service_token(access_token)
-        if not token_service_id or str(pk) != str(token_service_id):
-            return HttpResponse("Erişim reddedildi.", status=403)
-
         service = get_object_or_404(
             Service.objects.select_related('customer', 'technician__user').prefetch_related('items', 'payments'),
             pk=pk,

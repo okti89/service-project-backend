@@ -1,8 +1,12 @@
+import logging
+
 import requests
 from accounts.models import UserDevice
 
 
 EXPO_URL = "https://exp.host/--/api/v2/push/send"
+
+logger = logging.getLogger(__name__)
 
 
 def _post_expo(messages):
@@ -22,6 +26,7 @@ def _post_expo(messages):
             timeout=12,
         )
     except requests.exceptions.RequestException as e:
+        logger.warning("Expo push request failed: %s", e)
         return {"status": "request_failed", "error": str(e)}
 
     # Expo bazen 200 + error payload döner
@@ -45,6 +50,10 @@ def _chunk_list(data, size=100):
         yield data[i:i + size]
 
 
+def _log_expo_batch_response(scope, result):
+    logger.info(f"Expo {scope} push batch response=%s", result)
+
+
 def send_expo_push_notification(user, title, body, data=None, sound="default"):
     if not user:
         return {"status": "failed", "message": "User not provided"}
@@ -54,7 +63,8 @@ def send_expo_push_notification(user, title, body, data=None, sound="default"):
     valid_tokens = [t for t in tokens if _is_valid_token(t)]
 
     if not valid_tokens:
-        return {"status": "failed", "message": "No valid tokens"}
+        logger.info("Single push skipped because no valid Expo token exists for user=%s", getattr(user, "id", None))
+        return {"status": "failed", "message": "No valid tokens", "token_count": 0}
 
     messages = [
         {
@@ -68,13 +78,17 @@ def send_expo_push_notification(user, title, body, data=None, sound="default"):
         for token in valid_tokens
     ]
 
+    logger.info("Sending single Expo push to user=%s token_count=%s", getattr(user, "id", None), len(valid_tokens))
+
+
     results = []
 
     for batch in _chunk_list(messages, 100):
         result = _post_expo(batch)
+        _log_expo_batch_response("single", result)
         results.append(result)
 
-    return {"status": "success", "results": results}
+    return {"status": "success", "results": results, "token_count": len(valid_tokens)}
 
 
 def send_bulk_expo_push_notification(users, title, body, data=None, sound="default"):
@@ -88,7 +102,8 @@ def send_bulk_expo_push_notification(users, title, body, data=None, sound="defau
     valid_tokens = [t for t in tokens if _is_valid_token(t)]
 
     if not valid_tokens:
-        return {"status": "failed", "message": "No tokens found"}
+        logger.info("Bulk push skipped because no valid Expo token exists for users=%s", len(users))
+        return {"status": "failed", "message": "No tokens found", "token_count": 0}
 
     messages = [
         {
@@ -102,14 +117,18 @@ def send_bulk_expo_push_notification(users, title, body, data=None, sound="defau
         for token in valid_tokens
     ]
 
+    logger.info("Sending bulk Expo push user_count=%s token_count=%s", len(users), len(valid_tokens))
+
     results = []
 
     for batch in _chunk_list(messages, 100):
         result = _post_expo(batch)
+        _log_expo_batch_response("bulk", result)
         results.append(result)
 
     return {
         "status": "processed",
         "batch_count": len(results),
-        "results": results
+        "results": results,
+        "token_count": len(valid_tokens),
     }

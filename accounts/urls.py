@@ -10,7 +10,7 @@ from .views import (
 urlpatterns = [
     path('admin/login/',AdminLoginView.as_view(),name='admin-login'),
     path('admin/users/',UserListCreateAPIView.as_view(),name='admin-users'),
-    path('admin/users/<int:pk>/',UserDetailAPIView.as_view(),name='admin-user-detail'),
+    path('admin/users/<uuid:pk>/',UserDetailAPIView.as_view(),name='admin-user-detail'),
     path('admin/users/approval/',UserApprovalListView.as_view(),name='admin-user-approval'),
     # =========================
     # AUTH

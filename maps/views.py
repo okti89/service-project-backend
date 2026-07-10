@@ -346,17 +346,31 @@ def _google_directions(origin: str, destination: str, key: str, waypoints: list[
     return data
 
 
+def _parse_latlon_to_osrm(coord_str: str) -> str:
+    """'lat,lon' formatini OSRM'nin beklediği 'lon,lat' formatina cevir."""
+    parts = coord_str.strip().split(",")
+    if len(parts) == 2:
+        lat, lon = parts[0].strip(), parts[1].strip()
+        return f"{lon},{lat}"
+    return coord_str
+
+
 def _osrm_directions(origin: str, destination: str, waypoints: list[str] | None = None) -> dict | None:
-    # OSRM ";" ile ayrilmis coordinates destekler
-    coords = origin
+    # OSRM lon,lat sirasiyla koordinat bekler (GeoJSON standardi)
+    # Biz lat,lon formatinda aliyoruz, cevirmek gerekiyor
+    osrm_origin = _parse_latlon_to_osrm(origin)
+    osrm_dest = _parse_latlon_to_osrm(destination)
+
     if waypoints:
-        coords = ";".join([origin, *waypoints, destination])
+        osrm_waypoints = [_parse_latlon_to_osrm(wp) for wp in waypoints]
+        coords = ";".join([osrm_origin, *osrm_waypoints, osrm_dest])
     else:
-        coords = f"{origin};{destination}"
+        coords = f"{osrm_origin};{osrm_dest}"
+
     try:
         resp = requests.get(
             f"{OSRM_URL}/{coords}",
-            params={"overview": "full", "geometries": "geojson", "steps": "true"},
+            params={"overview": "full", "geometries": "geojson", "steps": "false"},
             timeout=10,
         )
     except requests.RequestException as exc:

@@ -43,6 +43,7 @@ class PayrollSerializer(serializers.ModelSerializer):
     base_salary = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
     technician_name = serializers.SerializerMethodField()
     technician_email = serializers.SerializerMethodField()
+    technician_phone = serializers.SerializerMethodField()
 
     class Meta:
         model = Payroll
@@ -64,6 +65,13 @@ class PayrollSerializer(serializers.ModelSerializer):
     def get_technician_email(self, obj):
         user = getattr(getattr(obj, "technician", None), "user", None)
         return getattr(user, "email", None)
+
+    def get_technician_phone(self, obj):
+        user = getattr(getattr(obj, "technician", None), "user", None)
+        if user and hasattr(user, "phone_number"):
+            return user.phone_number
+        tech = getattr(obj, "technician", None)
+        return getattr(tech, "phone_number", None) if tech else None
 
     def create(self, validated_data):
         technician = validated_data.get('technician')

@@ -2,6 +2,7 @@ from django.db import models
 from django.conf import settings
 from django.utils import timezone
 
+
 class Notification(models.Model):
     tenant = models.ForeignKey(
         'tenants.Tenant',
