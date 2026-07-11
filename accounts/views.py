@@ -401,6 +401,22 @@ class CheckAuthView(APIView):
         update_last_login(None, user)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    def patch(self, request):
+        serializer = UserSerializer(
+            request.user,
+            data=request.data,
+            partial=True,
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        response_serializer = CheckAuthSerializer(
+            request.user,
+            context={"request": request},
+        )
+        return Response(response_serializer.data, status=status.HTTP_200_OK)
+
 
 class AdminUserDeviceListView(APIView):
     """

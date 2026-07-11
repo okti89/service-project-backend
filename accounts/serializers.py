@@ -1,3 +1,4 @@
+from notifications.models import Notification
 from rest_framework import serializers
 from .models import User, UserDevice
 from tenants.utils import resolve_tenant_from_request
@@ -349,7 +350,7 @@ class UserDeviceSerializer(serializers.ModelSerializer):
 class CheckAuthSerializer(serializers.ModelSerializer):
     devices = UserDeviceSerializer(many=True, read_only=True)
 
-    unread_notifications_count = serializers.IntegerField(read_only=True)
+    unread_notifications_count = serializers.SerializerMethodField()
 
     user_type_display = serializers.CharField(
         source="get_user_type_display",
@@ -435,6 +436,9 @@ class CheckAuthSerializer(serializers.ModelSerializer):
     def get_technician_profile_id(self, obj):
         tech = getattr(obj, "technician_profile", None)
         return str(tech.id) if tech else None
+
+    def get_unread_notifications_count(self, obj):
+        return Notification.objects.filter(user=obj, is_read=False).count()
 
     # -------------------------
     # Permissions

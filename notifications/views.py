@@ -1,4 +1,5 @@
 from rest_framework import permissions, status
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -19,6 +20,10 @@ from django.core.mail import send_mass_mail
 
 logger = logging.getLogger(__name__)
 
+class NotificationPagination(PageNumberPagination):
+    page_size = 50
+    page_size_query_param = 'page_size'
+    max_page_size = 100
 
 class NotificationView(APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -26,8 +31,12 @@ class NotificationView(APIView):
         qs = Notification.objects.filter(
             user=request.user,
             tenant=request.user.tenant
-        )
-        return Response(NotificationSerializer(qs, many=True).data)
+        ).order_by('-created_at', '-id')
+
+        paginator = NotificationPagination()
+        page = paginator.paginate_queryset(qs, request, view=self)
+        serializer = NotificationSerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
 
     def patch(self, request, pk):
         try:

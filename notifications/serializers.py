@@ -5,7 +5,7 @@ from .models import Notification
 
 class NotificationSerializer(serializers.ModelSerializer):
     time_since = serializers.SerializerMethodField()
-
+    
     class Meta:
         model = Notification
         fields = (

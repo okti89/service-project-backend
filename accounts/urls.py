@@ -20,6 +20,7 @@ urlpatterns = [
     path('auth/logout/', LogoutView.as_view(), name='logout'),
     path('auth/change-password/', PasswordChangeView.as_view(), name='change-password'),
     path('auth/check/', CheckAuthView.as_view(), name='check-auth'),
+    path('auth/me/', CheckAuthView.as_view(), name='auth-me'),
 
     # =========================
     # PASSWORD RESET
