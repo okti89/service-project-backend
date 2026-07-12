@@ -1,8 +1,16 @@
 from django.contrib import admin
 from django.urls import path, include
 from core.views import GlobalSearchView
+from django.conf import settings
+from django.conf.urls.static import static
+from django.http import JsonResponse
+
+
+def health_check(request):
+    return JsonResponse({'status': 'ok'})
 
 urlpatterns = [
+    path('health/', health_check, name='health-check'),
     path('admin/', admin.site.urls),
     path('api/accounts/', include('accounts.urls')),
     path('api/accounting/', include('accounting.urls')),
@@ -18,5 +26,6 @@ urlpatterns = [
     path("api/maps/", include("maps.urls")),
     path("api/feedback/", include("feedback.urls")),
 
-
 ]
+if settings.SERVE_MEDIA_WITH_DJANGO:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

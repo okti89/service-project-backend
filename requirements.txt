@@ -19,3 +19,6 @@ sqlparse==0.5.5
 tablib==3.9.0
 tzdata==2025.3
 urllib3==2.6.2
+gunicorn==23.0.0
+whitenoise==6.8.2
+psycopg[binary]==3.2.3
