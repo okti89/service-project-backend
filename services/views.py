@@ -322,6 +322,17 @@ def _create_timeline_if_status_changed(service, old_status):
         )
 
 
+def _service_notification_context(service):
+    customer_name = service.customer_full_name or 'Müşteri'
+    customer_address = str(service.customer_address or '').strip() or 'Adres bilgisi bulunmuyor'
+    appointment = _format_service_schedule_label(service.scheduled_date)
+    return (
+        f"Müşteri: {customer_name}\n"
+        f"Adres: {customer_address}\n"
+        f"Randevu: {appointment}"
+    )
+
+
 def _notify_technician_assignment(service, old_technician_id=None):
     technician = getattr(service, 'technician', None)
     technician_user = getattr(technician, 'user', None)
@@ -334,17 +345,16 @@ def _notify_technician_assignment(service, old_technician_id=None):
         old_technician = Technician.objects.select_related('user').filter(pk=old_technician_id).first()
         old_technician_user = getattr(old_technician, 'user', None)
 
-    customer_name = service.customer_full_name or 'Müşteri'
     service_no = service.receipt_number or '-'
+    context = _service_notification_context(service)
 
-    # Yeni teknisyene: pozitif atama/güncelleme mesajı
     if technician_user:
         if old_technician_user and old_technician_user.id != technician_user.id:
             title = 'Servis ataması güncellendi'
-            message = f"#{service_no} no'lu servis size devredildi. Müşteri: {customer_name}."
+            message = f"#{service_no} no'lu servis görevi size devredildi.\n{context}"
         else:
             title = 'Yeni servis ataması'
-            message = f"#{service_no} no'lu servis size atandı. Müşteri: {customer_name}."
+            message = f"#{service_no} no'lu yeni servis size atandı.\n{context}"
         create_notification(
             user=technician_user,
             title=title,
@@ -353,12 +363,11 @@ def _notify_technician_assignment(service, old_technician_id=None):
             related_screen='service_detail',
         )
 
-    # Eski teknisyene: kırıcı olmayan, bilgilendirici mesaj
     if old_technician_user and (not technician_user or old_technician_user.id != technician_user.id):
         if technician_user:
-            message = f"#{service_no} no'lu servis görevi planlama güncellemesiyle başka bir teknisyene devredildi."
+            message = f"#{service_no} no'lu servis görevi başka bir teknisyene devredildi.\n{context}"
         else:
-            message = f"#{service_no} no'lu servis görevi planlama güncellemesi nedeniyle atama listesinden çıkarıldı."
+            message = f"#{service_no} no'lu servis görevi atama listenizden çıkarıldı.\n{context}"
         create_notification(
             user=old_technician_user,
             title='Servis görevinde güncelleme',
@@ -368,6 +377,32 @@ def _notify_technician_assignment(service, old_technician_id=None):
         )
 
 
+def _notify_technician_schedule_change(service, actor_user, old_scheduled_date, old_customer_address):
+    schedule_changed = old_scheduled_date != service.scheduled_date
+    address_changed = (old_customer_address or '').strip() != (service.customer_address or '').strip()
+    if not (schedule_changed or address_changed):
+        return
+
+    technician_user = getattr(getattr(service, 'technician', None), 'user', None)
+    if not technician_user or technician_user.id == getattr(actor_user, 'id', None):
+        return
+
+    service_no = service.receipt_number or '-'
+    customer_name = service.customer_full_name or 'Müşteri'
+    address = str(service.customer_address or '').strip() or 'Adres bilgisi bulunmuyor'
+    appointment = _format_service_schedule_label(service.scheduled_date)
+    create_notification(
+        user=technician_user,
+        title='Randevunuz Güncellendi',
+        message=(
+            f"#{service_no} no'lu servisin randevu bilgileri güncellendi.\n"
+            f"Müşteri: {customer_name}\nAdres: {address}\nRandevu: {appointment}"
+        ),
+        related_id=str(service.id),
+        related_screen='service_detail',
+    )
+
+
 def _notify_status_change_by_actor(service, actor_user, old_status):
     if not actor_user or old_status == service.service_status:
         return
@@ -375,7 +410,7 @@ def _notify_status_change_by_actor(service, actor_user, old_status):
     service_no = service.receipt_number or '-'
     old_label = _status_label(old_status)
     new_label = _status_label(service.service_status)
-    customer_name = service.customer_full_name or 'Müşteri'
+    context = _service_notification_context(service)
 
     actor_is_admin_like = bool(actor_user.is_staff or getattr(actor_user, 'user_type', '') == 'admin')
     actor_is_technician = getattr(actor_user, 'user_type', '') == 'technician'
@@ -386,7 +421,7 @@ def _notify_status_change_by_actor(service, actor_user, old_status):
             create_notification(
                 user=technician_user,
                 title='Servis durumu güncellendi',
-                message=f"#{service_no} no'lu servis durumu {old_label} -> {new_label} olarak güncellendi. Müşteri: {customer_name}.",
+                message=f"#{service_no} no'lu servisin durumu {old_label} -> {new_label} olarak güncellendi.\n{context}",
                 related_id=str(service.id),
                 related_screen='service_detail',
             )
@@ -404,7 +439,7 @@ def _notify_status_change_by_actor(service, actor_user, old_status):
             create_notification(
                 user=admin_user,
                 title='Teknisyen servis durumu güncelledi',
-                message=f"#{service_no} no'lu servis durumu {old_label} -> {new_label}. Teknisyen: {actor_user.get_full_name()}.",
+                message=f"{actor_user.get_full_name()} #{service_no} no'lu servisin durumunu {old_label} -> {new_label} olarak güncelledi.\n{context}",
                 related_id=str(service.id),
                 related_screen='service_detail',
             )
@@ -963,6 +998,7 @@ class TechnicianServiceRetrieveUpdateDestroyView(APIView):
         old_status = service.service_status
         old_technician_id = service.technician_id
         old_scheduled_date = service.scheduled_date
+        old_customer_address = service.customer_address
         serializer = ServiceSerializer(service, data=request.data, partial=True, context={"request": request})
 
         if serializer.is_valid():
@@ -970,6 +1006,7 @@ class TechnicianServiceRetrieveUpdateDestroyView(APIView):
             service.refresh_from_db()
             _create_timeline_if_status_changed(service, old_status)
             _notify_status_change_by_actor(service, request.user, old_status)
+            _notify_technician_schedule_change(service, request.user, old_scheduled_date, old_customer_address)
             _notify_technician_assignment(service, old_technician_id=old_technician_id)
             payload = serializer.data
             status_changed = old_status != service.service_status
@@ -1068,6 +1105,7 @@ class AdminServiceListCreateView(APIView):
         old_status = service.service_status
         old_technician_id = service.technician_id
         old_scheduled_date = service.scheduled_date
+        old_customer_address = service.customer_address
 
         # 🔐 yetki kontrolü
         user = request.user
@@ -1083,6 +1121,7 @@ class AdminServiceListCreateView(APIView):
             service.refresh_from_db()
             _create_timeline_if_status_changed(service, old_status)
             _notify_status_change_by_actor(service, request.user, old_status)
+            _notify_technician_schedule_change(service, request.user, old_scheduled_date, old_customer_address)
             _notify_technician_assignment(service, old_technician_id=old_technician_id)
             payload = serializer.data
             status_changed = old_status != service.service_status
@@ -1151,12 +1190,14 @@ class AdminServiceRetrieveUpdateDestroyView(APIView):
         old_status = service.service_status
         old_technician_id = service.technician_id
         old_scheduled_date = service.scheduled_date
+        old_customer_address = service.customer_address
         serializer = ServiceSerializer(service, data=request.data, partial=True, context={"request": request})
         if serializer.is_valid():
             serializer.save()
             service.refresh_from_db()
             _create_timeline_if_status_changed(service, old_status)
             _notify_status_change_by_actor(service, request.user, old_status)
+            _notify_technician_schedule_change(service, request.user, old_scheduled_date, old_customer_address)
             _notify_technician_assignment(service, old_technician_id=old_technician_id)
             payload = serializer.data
             status_changed = old_status != service.service_status

@@ -9,8 +9,12 @@ from accounts.models import User
 from customers.models import Customer
 from tenants.models import Tenant
 from technicians.models import Technician
+from notifications.models import Notification
 
-from .models import Service, WarrantyCertificate
+from .daily_summary import send_daily_service_summaries
+from .operational_alerts import send_operational_alerts
+
+from .models import Service, ServiceOperations, ServicePayment, WarrantyCertificate
 from .serializers import PublicServiceSerializer, WarrantyCertificateSerializer
 from .views import (
     _build_public_service_tracking_url,
@@ -124,3 +128,115 @@ class ServiceSerializerRegressionTests(TestCase):
         self.assertEqual(data["certificate_no"], certificate.certificate_no)
         self.assertEqual(Decimal(str(data["warranty_months"])), Decimal("12"))
         self.assertNotIn("terms_snapshot", data)
+
+
+class DailyServiceSummaryTests(TestCase):
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name='Summary Tenant', code='summary-tenant')
+        self.manager = User.objects.create_user(
+            email='manager-summary@example.com',
+            password='pass123',
+            tenant=self.tenant,
+            user_type='admin',
+        )
+        self.technician_user = User.objects.create_user(
+            email='technician-summary@example.com',
+            password='pass123',
+            tenant=self.tenant,
+            user_type='technician',
+        )
+        self.technician = Technician.objects.create(user=self.technician_user, tenant=self.tenant)
+        self.customer = Customer.objects.create(
+            tenant=self.tenant,
+            full_name='Summary Customer',
+            phone_number='5553334455',
+        )
+        Service.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            customer_full_name=self.customer.full_name,
+            customer_phone=self.customer.phone_number,
+            technician=self.technician,
+            scheduled_date=timezone.now(),
+        )
+
+    def test_sends_manager_and_technician_summaries_once_per_day(self):
+        summary_date = timezone.localdate()
+
+        result = send_daily_service_summaries(summary_date=summary_date)
+
+        self.assertEqual(result['sent'], 2)
+        self.assertEqual(Notification.objects.filter(related_screen='DailyServiceSummary').count(), 2)
+        self.assertIn('1', Notification.objects.get(user=self.manager).message)
+        self.assertIn('1', Notification.objects.get(user=self.technician_user).message)
+
+        repeated_result = send_daily_service_summaries(summary_date=summary_date)
+
+        self.assertEqual(repeated_result['sent'], 0)
+        self.assertEqual(repeated_result['skipped'], 2)
+
+
+class OperationalAlertTests(TestCase):
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name='Alerts Tenant', code='alerts-tenant')
+        self.manager = User.objects.create_user(
+            email='alerts-manager@example.com',
+            password='pass123',
+            tenant=self.tenant,
+            user_type='admin',
+        )
+        self.technician_user = User.objects.create_user(
+            email='alerts-tech@example.com',
+            password='pass123',
+            tenant=self.tenant,
+            user_type='technician',
+        )
+        self.technician = Technician.objects.create(user=self.technician_user, tenant=self.tenant)
+        self.customer = Customer.objects.create(
+            tenant=self.tenant,
+            full_name='Alerts Customer',
+            phone_number='5557778899',
+        )
+        self.now = timezone.now()
+
+    def create_service(self, **kwargs):
+        defaults = {
+            'tenant': self.tenant,
+            'customer': self.customer,
+            'customer_full_name': self.customer.full_name,
+            'customer_phone': self.customer.phone_number,
+            'customer_address': 'Test Address',
+            'scheduled_date': self.now,
+        }
+        defaults.update(kwargs)
+        return Service.objects.create(**defaults)
+
+    def test_sends_unassigned_overdue_and_receivable_alerts(self):
+        self.create_service(scheduled_date=self.now + timedelta(hours=2))
+        self.create_service(
+            technician=self.technician,
+            scheduled_date=self.now - timedelta(hours=2),
+        )
+        completed_service = self.create_service(
+            technician=self.technician,
+            scheduled_date=self.now - timedelta(days=1),
+        )
+        completed_service.service_status = 'completed'
+        completed_service.save()
+        ServiceOperations.objects.create(
+            service=completed_service,
+            name='Test Operation',
+            quantity=1,
+            unit_price=Decimal('100.00'),
+        )
+        ServicePayment.objects.create(service=completed_service, amount=Decimal('40.00'))
+
+        result = send_operational_alerts(now=self.now)
+
+        self.assertEqual(result['unassigned'], 1)
+        self.assertEqual(result['overdue'], 2)
+        self.assertEqual(result['receivable'], 1)
+        self.assertEqual(result['total_sent'], 4)
+
+        repeated_result = send_operational_alerts(now=self.now)
+        self.assertEqual(repeated_result['total_sent'], 0)
