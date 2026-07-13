@@ -28,6 +28,8 @@ class ConvertServiceIdToUuid(Operation):
         if schema_editor.connection.vendor == 'postgresql':
             schema_editor.execute(
                 "ALTER TABLE services_service "
+                "ALTER COLUMN id DROP IDENTITY IF EXISTS; "
+                "ALTER TABLE services_service "
                 "ALTER COLUMN id DROP DEFAULT; "
                 "ALTER TABLE services_service "
                 "ALTER COLUMN id TYPE uuid "
