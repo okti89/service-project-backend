@@ -31,9 +31,30 @@ if not DEBUG and not ALLOWED_HOSTS:
 AUTH_USER_MODEL = 'accounts.User'
 CORS_ALLOW_ALL_ORIGINS = config('CORS_ALLOW_ALL_ORIGINS', default=DEBUG, cast=bool)
 CORS_ALLOWED_ORIGINS = env_list('CORS_ALLOWED_ORIGINS')
-CORS_ALLOW_HEADERS = list(default_headers) + ['x-tenant-code']
 CSRF_TRUSTED_ORIGINS = env_list('CSRF_TRUSTED_ORIGINS')
 
+CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', 'https://servis-yonetim.onrender.com,https://imrpx8h1iihplrf4rs1ssbqo.5.75.152.139.sslip.io,http://localhost:3000').split(',')
+CORS_ALLOW_CREDENTIALS = True # Bu ayar TRUE kalmalı
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+    'x-tenant-code',
+]
 
 # Application definition
 

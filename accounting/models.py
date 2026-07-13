@@ -44,8 +44,8 @@ class Account(models.Model):
         default=Decimal("0.00"),
         verbose_name="Bakiye",
     )
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Olusturulma Tarihi")
-    updated_at = models.DateTimeField(auto_now=True, verbose_name="Guncellenme Tarihi")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Oluşturulma Tarihi")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Güncellenme Tarihi")
 
     class Meta:
         verbose_name = "Hesap"
@@ -55,7 +55,7 @@ class Account(models.Model):
         if self.company_id and self.company.tenant_id:
             if self.tenant_id and self.tenant_id != self.company.tenant_id:
                 raise ValidationError(
-                    {"company": "Hesap firmasi ile tenant bilgisi uyusmuyor."}
+                    {"company": "Hesap firmasi ile firma bilgisi uyusmuyor."}
                 )
 
     def save(self, *args, **kwargs):
@@ -95,22 +95,22 @@ class TransactionCategory(models.Model):
         null=True,
         blank=True,
     )
-    name = models.CharField(max_length=100, verbose_name="Kategori Adi")
+    name = models.CharField(max_length=100, verbose_name="Kategori Adı")
     type = models.CharField(
         max_length=10,
         choices=TRANSACTION_TYPES,
-        verbose_name="Islem Turu",
+        verbose_name="İşlem Türü",
     )
 
     class Meta:
-        verbose_name = "Islem Kategorisi"
-        verbose_name_plural = "Islem Kategorileri"
+        verbose_name = "İşlem Kategorisi"
+        verbose_name_plural = "İşlem Kategorileri"
 
     def clean(self):
         if self.company_id and self.company.tenant_id:
             if self.tenant_id and self.tenant_id != self.company.tenant_id:
                 raise ValidationError(
-                    {"company": "Kategori firmasi ile tenant bilgisi uyusmuyor."}
+                    {"company": "Kategori firmasi ile firma bilgisi uyuşmuyor."}
                 )
 
     def save(self, *args, **kwargs):
@@ -148,7 +148,7 @@ class Transaction(models.Model):
     transaction_type = models.CharField(
         max_length=10,
         choices=TransactionCategory.TRANSACTION_TYPES,
-        verbose_name="Islem Turu",
+        verbose_name="İşlem Türü",
     )
     account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name="transactions")
     category = models.ForeignKey(
@@ -171,8 +171,8 @@ class Transaction(models.Model):
     is_retrieved = models.BooleanField(default=False, verbose_name="Geri Alindi")
 
     class Meta:
-        verbose_name = "Islem"
-        verbose_name_plural = "Islemler"
+        verbose_name = "İşlem"
+        verbose_name_plural = "İşlemler"
         indexes = [
             models.Index(fields=["date"]),
             models.Index(fields=["account"]),
@@ -229,36 +229,36 @@ class Transaction(models.Model):
         self._populate_context_fields()
 
         if self.amount is not None and self.amount <= 0:
-            raise ValidationError({"amount": "Islem tutari sifirdan buyuk olmali."})
+            raise ValidationError({"amount": "İşlem tutarı sıfırdan büyük olmalı."})
 
         if self.company_id and self.company.tenant_id:
             if self.tenant_id and self.tenant_id != self.company.tenant_id:
                 raise ValidationError(
-                    {"company": "Islem firmasi ile tenant bilgisi uyusmuyor."}
+                    {"company": "İşlem firması ile firma bilgisi uyuşmuyor."}
                 )
 
         if self.account_id:
             if self.account.tenant_id and self.tenant_id != self.account.tenant_id:
                 raise ValidationError(
-                    {"account": "Secilen hesap farkli bir tenant'a ait."}
+                    {"account": "Seçilen hesap farklı bir firmaya ait."}
                 )
             if self.account.company_id and self.company_id != self.account.company_id:
                 raise ValidationError(
-                    {"account": "Secilen hesap farkli bir firmaya ait."}
+                    {"account": "Seçilen hesap farklı bir firmaya ait."}
                 )
 
         if self.category_id:
             if self.category.type != self.transaction_type:
                 raise ValidationError(
-                    {"category": "Kategori tipi islem tipi ile uyusmuyor."}
+                    {"category": "Kategori tipi işlem tipi ile uyuşmuyor."}
                 )
             if self.category.tenant_id and self.tenant_id != self.category.tenant_id:
                 raise ValidationError(
-                    {"category": "Secilen kategori farkli bir tenant'a ait."}
+                    {"category": "Seçilen kategori farklı bir firmaya ait."}
                 )
             if self.category.company_id and self.company_id != self.category.company_id:
                 raise ValidationError(
-                    {"category": "Secilen kategori farkli bir firmaya ait."}
+                    {"category": "Seçilen kategori farklı bir firmaya ait."}
                 )
 
     def _balance_adjustments(self, previous):
