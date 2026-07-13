@@ -7,6 +7,45 @@ import services.models
 import uuid
 from django.conf import settings
 from django.db import migrations, models
+from django.db.migrations.operations.base import Operation
+
+
+class ConvertServiceIdToUuid(Operation):
+    """Convert the legacy Service bigint primary key without data loss."""
+
+    reversible = False
+
+    def state_forwards(self, app_label, state):
+        state.alter_field(
+            app_label,
+            'service',
+            'id',
+            models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False),
+            preserve_default=True,
+        )
+
+    def database_forwards(self, app_label, schema_editor, from_state, to_state):
+        if schema_editor.connection.vendor == 'postgresql':
+            schema_editor.execute(
+                "ALTER TABLE services_service "
+                "ALTER COLUMN id DROP DEFAULT; "
+                "ALTER TABLE services_service "
+                "ALTER COLUMN id TYPE uuid "
+                "USING ('00000000-0000-0000-0000-' || "
+                "lpad(to_hex(id), 12, '0'))::uuid"
+            )
+            return
+
+        from_model = from_state.apps.get_model(app_label, 'Service')
+        to_model = to_state.apps.get_model(app_label, 'Service')
+        schema_editor.alter_field(
+            from_model,
+            from_model._meta.get_field('id'),
+            to_model._meta.get_field('id'),
+        )
+
+    def describe(self):
+        return 'Convert the Service primary key from bigint to UUID'
 
 
 class Migration(migrations.Migration):
@@ -82,11 +121,7 @@ class Migration(migrations.Migration):
             name='updated_at',
             field=models.DateTimeField(auto_now=True, verbose_name='Güncellenme Tarihi'),
         ),
-        migrations.AlterField(
-            model_name='service',
-            name='id',
-            field=models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False),
-        ),
+        ConvertServiceIdToUuid(),
         migrations.CreateModel(
             name='Brand',
             fields=[
