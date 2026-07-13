@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.urls import path, include
-from core.views import GlobalSearchView
+from core.views import GlobalSearchView, privacy_policy
 from django.conf import settings
 from django.conf.urls.static import static
 from django.http import JsonResponse
@@ -11,6 +11,7 @@ def health_check(request):
 
 urlpatterns = [
     path('health/', health_check, name='health-check'),
+    path('privacy-policy/', privacy_policy, name='privacy-policy'),
     path('admin/', admin.site.urls),
     path('api/accounts/', include('accounts.urls')),
     path('api/accounting/', include('accounting.urls')),

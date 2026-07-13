@@ -78,3 +78,17 @@ class UserDeviceTenantSyncTests(TestCase):
         device.refresh_from_db()
 
         self.assertEqual(device.tenant, self.tenant)
+
+
+class AccountDeletionTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.tenant = Tenant.objects.create(name="Tenant B", code="tenant-b")
+        self.user = User.objects.create_user(email="delete@example.com", password="delete-pass-123", user_type="technician", tenant=self.tenant)
+        self.token = Token.objects.create(user=self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+
+    def test_delete_account_requires_password_and_removes_user(self):
+        response = self.client.delete('/api/accounts/auth/delete-account/', {"password": "delete-pass-123", "confirmation": "SİL"}, format="json")
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(User.objects.filter(pk=self.user.pk).exists())

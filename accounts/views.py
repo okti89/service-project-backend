@@ -1,6 +1,6 @@
 import uuid
 import logging
-from django.db import models
+from django.db import models, transaction
 
 from django.contrib.auth.models import update_last_login
 from rest_framework import permissions, status
@@ -264,6 +264,29 @@ class LoginView(APIView):
         update_last_login(None, user)
         user_serializer = CheckAuthSerializer(user, context={"request": request})
         return Response({"token": token.key, "user": user_serializer.data}, status=status.HTTP_200_OK)
+
+class DeleteAccountView(APIView):
+    """Permanently remove the authenticated user's account and personal records."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request):
+        password = request.data.get("password", "")
+        confirmation = str(request.data.get("confirmation", "")).strip().upper()
+        user = request.user
+
+        if confirmation != "SİL":
+            return Response({"detail": "Onay için SİL yazmalısınız."}, status=status.HTTP_400_BAD_REQUEST)
+        if not password or not user.check_password(password):
+            return Response({"detail": "Parolanız doğrulanamadı."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Device, token, location and technician records cascade. Historical service
+        # records remain, while optional user references are detached with SET_NULL.
+        with transaction.atomic():
+            if user.avatar:
+                user.avatar.delete(save=False)
+            user.delete()
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 class LogoutView(APIView):
     permission_classes = [permissions.IsAuthenticated]
