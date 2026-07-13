@@ -3,7 +3,7 @@ from .views import (
     AdminLoginView,UserListCreateAPIView,UserDetailAPIView,
     UserApprovalListView,RegisterView,LoginView,LogoutView,
     CheckAuthView,PasswordChangeView,PasswordResetRequestView,
-    PasswordResetVerifyView,PasswordResetConfirmView,RegisterUserDeviceView,
+    PasswordResetVerifyView,PasswordResetConfirmView,RegisterUserDeviceView,DeleteAccountView,
     AdminUserDeviceListView)
 
 
