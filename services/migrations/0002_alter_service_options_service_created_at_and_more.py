@@ -26,7 +26,16 @@ class ConvertServiceIdToUuid(Operation):
 
     def database_forwards(self, app_label, schema_editor, from_state, to_state):
         if schema_editor.connection.vendor == 'postgresql':
+            # LocationLog is created by technicians.0002 before this migration
+            # and still references the legacy bigint Service primary key.
             schema_editor.execute(
+                "ALTER TABLE technicians_locationlog "
+                "DROP CONSTRAINT IF EXISTS technicians_location_service_id_1b468259_fk_services_; "
+                "ALTER TABLE technicians_locationlog "
+                "ALTER COLUMN service_id TYPE uuid "
+                "USING CASE WHEN service_id IS NULL THEN NULL "
+                "ELSE ('00000000-0000-0000-0000-' || "
+                "lpad(to_hex(service_id), 12, '0'))::uuid END; "
                 "ALTER TABLE services_service "
                 "ALTER COLUMN id DROP IDENTITY IF EXISTS; "
                 "ALTER TABLE services_service "
@@ -34,7 +43,11 @@ class ConvertServiceIdToUuid(Operation):
                 "ALTER TABLE services_service "
                 "ALTER COLUMN id TYPE uuid "
                 "USING ('00000000-0000-0000-0000-' || "
-                "lpad(to_hex(id), 12, '0'))::uuid"
+                "lpad(to_hex(id), 12, '0'))::uuid; "
+                "ALTER TABLE technicians_locationlog "
+                "ADD CONSTRAINT technicians_location_service_id_1b468259_fk_services_ "
+                "FOREIGN KEY (service_id) REFERENCES services_service (id) "
+                "ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED"
             )
             return
 
