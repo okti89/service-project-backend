@@ -203,7 +203,8 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = '/static/'
-STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+# Static assets are rebuilt on each deploy, so keep them outside application and media mounts.
+STATIC_ROOT = config('STATIC_ROOT', default=str(BASE_DIR / 'staticfiles') if DEBUG else '/tmp/service-staticfiles')
 STATICFILES_STORAGE_BACKEND = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 SERVE_MEDIA_WITH_DJANGO = config('SERVE_MEDIA_WITH_DJANGO', default=DEBUG, cast=bool)
 
