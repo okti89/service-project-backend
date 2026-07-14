@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Servis Yönetimi - Hesap Silme Talebi</title>
+  <style>
+    body { margin: 0; background: #f4f7fb; color: #172033; font: 16px/1.6 Arial, sans-serif; }
+    main { max-width: 680px; margin: 40px auto; padding: 36px; background: #fff; border-radius: 18px; box-shadow: 0 8px 30px rgba(15, 23, 42, .08); }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    h2 { margin-top: 28px; font-size: 20px; }
+    p, li { color: #475569; }
+    label { display: block; margin: 16px 0 6px; font-weight: 700; }
+    input, textarea { box-sizing: border-box; width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 10px; font: inherit; }
+    textarea { min-height: 88px; resize: vertical; }
+    button { margin-top: 18px; padding: 12px 18px; border: 0; border-radius: 10px; background: #dc2626; color: #fff; font: 700 15px Arial, sans-serif; cursor: pointer; }
+    .notice { padding: 14px; border-radius: 10px; margin: 18px 0; }
+    .success { background: #ecfdf5; color: #166534; }
+    .error { background: #fef2f2; color: #b91c1c; }
+    @media (max-width: 640px) { main { margin: 0; min-height: 100vh; border-radius: 0; padding: 24px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Servis Yönetimi Hesap Silme</h1>
+    <p>Servis Yönetimi hesabınızın ve hesabınıza bağlı kişisel verilerin silinmesini bu sayfadan talep edebilirsiniz.</p>
+
+    {% if submitted %}
+      <div class="notice success">Talebiniz alındı. Hesap sahipliği doğrulandıktan sonra silme işlemi başlatılacaktır.</div>
+    {% elif error %}
+      <div class="notice error">{{ error }}</div>
+    {% else %}
+      <form method="post">
+        {% csrf_token %}
+        <label for="email">Hesap e-posta adresi</label>
+        <input id="email" name="email" type="email" required autocomplete="email">
+        <label for="note">Not (isteğe bağlı)</label>
+        <textarea id="note" name="note" maxlength="1000" placeholder="Talebinizle ilgili ek bilgi"></textarea>
+        <button type="submit">Hesap Silme Talebi Gönder</button>
+      </form>
+    {% endif %}
+
+    <h2>Uygulama içinden silme</h2>
+    <p>Uygulamaya erişebiliyorsanız Profil &gt; Hesabımı Sil adımından parolanızı doğrulayarak hesabınızı doğrudan silebilirsiniz.</p>
+    <h2>Silinen ve saklanabilen veriler</h2>
+    <p>Hesabınıza bağlı profil, oturum, cihaz ve konum verileri silinir. Yasal veya muhasebesel saklama yükümlülüğü bulunan kurumsal servis ve finans kayıtları, kullanıcı kimliğinizden ayrıştırılarak saklanabilir.</p>
+    <p>Gizlilik uygulamalarımız için <a href="/privacy-policy/">Gizlilik Politikası</a> sayfasını inceleyebilirsiniz.</p>
+  </main>
+</body>
+</html>

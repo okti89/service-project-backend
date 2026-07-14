@@ -4,7 +4,7 @@ from django.utils.translation import gettext_lazy as _
 from django.utils.html import format_html
 from import_export.admin import ImportExportModelAdmin
 
-from .models import User,UserDevice
+from .models import AccountDeletionRequest, User, UserDevice
 from technicians.services import ensure_technician_profile
 
 @admin.register(User)
@@ -110,3 +110,11 @@ class CustomUserAdmin(ImportExportModelAdmin, BaseUserAdmin):
 
 
 admin.site.register(UserDevice,)
+
+
+@admin.register(AccountDeletionRequest)
+class AccountDeletionRequestAdmin(admin.ModelAdmin):
+    list_display = ("email", "status", "created_at", "processed_at")
+    list_filter = ("status",)
+    search_fields = ("email",)
+    readonly_fields = ("created_at",)

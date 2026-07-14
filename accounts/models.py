@@ -194,3 +194,28 @@ class UserDevice(models.Model):
 
     def __str__(self):
         return f"{self.user.get_full_name()} - {self.device_name}"
+
+
+class AccountDeletionRequest(models.Model):
+    STATUS_PENDING = "pending"
+    STATUS_COMPLETED = "completed"
+    STATUS_REJECTED = "rejected"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "İnceleme Bekliyor"),
+        (STATUS_COMPLETED, "Tamamlandı"),
+        (STATUS_REJECTED, "Reddedildi"),
+    ]
+
+    email = models.EmailField(db_index=True)
+    note = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    created_at = models.DateTimeField(auto_now_add=True)
+    processed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Hesap Silme Talebi"
+        verbose_name_plural = "Hesap Silme Talepleri"
+
+    def __str__(self):
+        return f"{self.email} - {self.get_status_display()}"

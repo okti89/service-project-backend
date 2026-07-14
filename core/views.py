@@ -1,6 +1,9 @@
 from django.db.models import Q, Value
 from django.db.models.functions import Replace
 from django.http import HttpResponse
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
+from django.shortcuts import render
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -9,6 +12,7 @@ from customers.models import Customer
 from products.models import Product
 from services.models import Service
 from technicians.models import Technician
+from accounts.models import AccountDeletionRequest
 
 
 class GlobalSearchView(APIView):
@@ -172,6 +176,36 @@ def privacy_policy(request):
 <h2>İşleme amaçları</h2><p>Veriler; kullanıcı hesabını yönetmek, servis iş emirlerini yürütmek, müşteriyle iletişimi sağlamak, servis belgelerini oluşturmak, aktif saha görevlerini takip etmek ve bildirim göndermek için kullanılır. Veriler reklam amacıyla satılmaz veya izleme amacıyla kullanılmaz.</p>
 <h2>Konum verisi</h2><p>Arka plan konumu yalnızca teknisyen aktif vardiya takibini başlattığında ve açık rıza ile işletilir. Konum, görev yönetimi ve yetkili yöneticilerin canlı takip ekranı için sunucuya aktarılır. Kullanıcı, cihaz ayarlarından konum iznini her zaman kapatabilir.</p>
 <h2>Hizmet sağlayıcılar ve güvenlik</h2><p>Bildirim, harita ve altyapı hizmetleri için Expo, Firebase ve Google Maps gibi hizmet sağlayıcılar kullanılabilir. Veri aktarımı üretim ortamında HTTPS üzerinden yapılır.</p>
-<h2>Saklama ve silme</h2><p>Kullanıcı hesabı, uygulama içindeki Profil &gt; Hesabımı Sil adımından silinebilir. Hesap silindiğinde kullanıcıya bağlı oturum, cihaz, konum ve profil verileri kaldırılır. Yasal veya muhasebesel saklama yükümlülüğü bulunan kurumsal servis kayıtları, kullanıcı kimliğiyle bağlantısı kaldırılarak saklanabilir.</p>
+<h2>Saklama ve silme</h2><p>Kullanıcı hesabı, uygulama içindeki Profil &gt; Hesabımı Sil adımından silinebilir. Uygulamaya erişemiyorsanız <a href="/delete-account/">hesap silme talep formunu</a> kullanabilirsiniz. Hesap silindiğinde kullanıcıya bağlı oturum, cihaz, konum ve profil verileri kaldırılır. Yasal veya muhasebesel saklama yükümlülüğü bulunan kurumsal servis kayıtları, kullanıcı kimliğiyle bağlantısı kaldırılarak saklanabilir.</p>
 <h2>İletişim</h2><p>Gizlilik talepleriniz için uygulamadaki Ayarlar &gt; E-posta ile Geri Bildirim alanından destek ekibiyle iletişime geçebilirsiniz.</p></main></body></html>"""
     return HttpResponse(html, content_type="text/html; charset=utf-8")
+
+def account_deletion(request):
+    submitted = False
+    error = ""
+
+    if request.method == "POST":
+        email = str(request.POST.get("email", "")).strip().lower()
+        note = str(request.POST.get("note", "")).strip()
+        try:
+            validate_email(email)
+        except ValidationError:
+            error = "Lütfen geçerli bir e-posta adresi girin."
+        else:
+            existing_request = AccountDeletionRequest.objects.filter(
+                email__iexact=email,
+                status=AccountDeletionRequest.STATUS_PENDING,
+            ).first()
+            if existing_request:
+                if note and not existing_request.note:
+                    existing_request.note = note
+                    existing_request.save(update_fields=["note"])
+            else:
+                AccountDeletionRequest.objects.create(email=email, note=note)
+            submitted = True
+
+    return render(
+        request,
+        "core/account_deletion.html",
+        {"submitted": submitted, "error": error},
+    )
