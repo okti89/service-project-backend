@@ -227,7 +227,6 @@ STATIC_URL = '/static/'
 # Static assets are rebuilt on each deploy, so keep them outside application and media mounts.
 STATIC_ROOT = config('STATIC_ROOT', default=str(BASE_DIR / 'staticfiles') if DEBUG else '/tmp/service-staticfiles')
 STATICFILES_STORAGE_BACKEND = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
-SERVE_MEDIA_WITH_DJANGO = config('SERVE_MEDIA_WITH_DJANGO', default=DEBUG, cast=bool)
 
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 SECURE_SSL_REDIRECT = config('SECURE_SSL_REDIRECT', default=not DEBUG, cast=bool)
@@ -254,6 +253,11 @@ if not R2_ENDPOINT_URL and R2_ACCOUNT_ID:
 
 R2_IS_CONFIGURED = R2_ENABLED and all(
     [R2_ENDPOINT_URL, R2_BUCKET_NAME, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY]
+)
+SERVE_MEDIA_WITH_DJANGO = config(
+    'SERVE_MEDIA_WITH_DJANGO',
+    default=not R2_IS_CONFIGURED,
+    cast=bool,
 )
 
 if R2_IS_CONFIGURED:
