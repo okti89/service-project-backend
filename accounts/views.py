@@ -106,11 +106,11 @@ class UserDetailAPIView(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         serializer.save()
-        ensure_technician_profile(user)
         if old_status != user.approval_status:
             if user.approval_status == "approved":
                 user.is_active = True
                 user.save(update_fields=["is_active"])
+                ensure_technician_profile(user)
                 create_notification(
                     user=user,
                     title="Hesabınız aktifleşti",

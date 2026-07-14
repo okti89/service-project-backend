@@ -6,6 +6,11 @@ from .services import ensure_technician_profile
 
 @receiver(post_save, sender=settings.AUTH_USER_MODEL)
 def create_technician_profile(sender, instance, created, **kwargs):
-    """Yeni kullanıcı oluşturulduğunda otomatik Teknisyen profili + yetkiler oluştur."""
-    if created:
+    """Only approved, active technicians receive an operational profile."""
+    if (
+        created
+        and instance.user_type == "technician"
+        and instance.approval_status == "approved"
+        and instance.is_active
+    ):
         ensure_technician_profile(instance)

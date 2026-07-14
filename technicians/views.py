@@ -220,7 +220,11 @@ class TechnicianListCreateView(APIView):
         include_inactive = request.query_params.get("include_inactive", "true").lower() == "true"
 
         queryset = _technician_queryset(request).select_related("user", "status").prefetch_related("permissions")
-        queryset = queryset.filter(user__user_type__in=["technician", "admin"])
+        queryset = queryset.filter(
+            user__user_type__in=["technician", "admin"],
+            user__approval_status="approved",
+            user__is_active=True,
+        )
         queryset = queryset.annotate(
             is_self=Case(
                 When(user_id=request.user.id, then=Value(True)),
@@ -229,8 +233,6 @@ class TechnicianListCreateView(APIView):
             )
         )
 
-        if not include_inactive:
-            queryset = queryset.filter(user__is_active=True)
 
         from django.db.models.functions import Lower
         serializer = TechnicianListSerializer(

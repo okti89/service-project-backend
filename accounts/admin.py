@@ -85,7 +85,6 @@ class CustomUserAdmin(ImportExportModelAdmin, BaseUserAdmin):
                 user.approval_status = 'rejected'
                 user.is_active = False
                 user.save(update_fields=['approval_status', 'is_active'])
-                ensure_technician_profile(user)
                 updated += 1
         if updated:
             self.message_user(request, f'{updated} kullanıcı reddedildi.', level='warning')
@@ -100,7 +99,6 @@ class CustomUserAdmin(ImportExportModelAdmin, BaseUserAdmin):
                 user.approval_status = 'pending'
                 user.is_active = False
                 user.save(update_fields=['approval_status', 'is_active'])
-                ensure_technician_profile(user)
                 updated += 1
         if updated:
             self.message_user(request, f'{updated} kullanıcı onay bekliyor olarak işaretlendi.', level='info')
