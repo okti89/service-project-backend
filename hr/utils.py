@@ -5,6 +5,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.utils import ImageReader
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle, Image
 
 from reports import utils as report_utils
@@ -36,7 +37,10 @@ def generate_payroll_pdf(payroll):
             company_name = config.name or company_name
             if config.logo:
                 try:
-                    logo_img = Image(config.logo.path, width=36, height=36)
+                    # Validate the file now because ReportLab opens images lazily during doc.build().
+                    logo_path = config.logo.path
+                    ImageReader(logo_path)
+                    logo_img = Image(logo_path, width=36, height=36)
                 except Exception:
                     logo_img = None
 

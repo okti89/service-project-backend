@@ -32,6 +32,7 @@ class TechnicianPermissionsSerializer(serializers.ModelSerializer):
             "can_manage_reports",
             "can_manage_settings",
             "can_manage_services",            
+            "can_use_global_search",
             "can_manage_technicians"
         ]
         read_only_fields = ["id", "technician"]
