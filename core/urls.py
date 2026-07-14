@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.urls import path, include, re_path
-from core.views import GlobalSearchView, account_deletion, privacy_policy
+from core.views import GlobalSearchView, account_deletion, account_deletion_request_api, privacy_policy
 from django.conf import settings
 
 from django.http import JsonResponse
@@ -14,6 +14,7 @@ urlpatterns = [
     path('health/', health_check, name='health-check'),
     path('privacy-policy/', privacy_policy, name='privacy-policy'),
     path('delete-account/', account_deletion, name='account-deletion'),
+    path('api/account-deletion-requests/', account_deletion_request_api, name='account-deletion-request-api'),
     path('admin/', admin.site.urls),
     path('api/accounts/', include('accounts.urls')),
     path('api/accounting/', include('accounting.urls')),

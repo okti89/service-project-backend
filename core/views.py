@@ -1,9 +1,12 @@
 from django.db.models import Q, Value
 from django.db.models.functions import Replace
-from django.http import HttpResponse
+import json
+
+from django.http import HttpResponse, JsonResponse
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.shortcuts import render
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -209,3 +212,36 @@ def account_deletion(request):
         "core/account_deletion.html",
         {"submitted": submitted, "error": error},
     )
+
+@csrf_exempt
+def account_deletion_request_api(request):
+    """Accept public deletion requests submitted from the hosted frontend."""
+    if request.method != "POST":
+        return JsonResponse({"detail": "Method not allowed."}, status=405)
+
+    try:
+        payload = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"detail": "Geçersiz istek."}, status=400)
+
+    email = str(payload.get("email", "")).strip().lower()
+    note = str(payload.get("note", "")).strip()
+    try:
+        validate_email(email)
+    except ValidationError:
+        return JsonResponse({"detail": "Lütfen geçerli bir e-posta adresi girin."}, status=400)
+
+    existing_request = AccountDeletionRequest.objects.filter(
+        email__iexact=email,
+        status=AccountDeletionRequest.STATUS_PENDING,
+    ).first()
+    if existing_request:
+        if note and not existing_request.note:
+            existing_request.note = note
+            existing_request.save(update_fields=["note"])
+    else:
+        AccountDeletionRequest.objects.create(email=email, note=note)
+
+    return JsonResponse({
+        "detail": "Talebiniz alındı. Hesap silme işlemi tamamlandığında size bilgi verilecektir."
+    }, status=201)
