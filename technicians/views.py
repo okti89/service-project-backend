@@ -448,13 +448,25 @@ class TechnicianLocationPingView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        TechnicianLocation.objects.create(
-            tenant=technician.tenant,
-            technician=technician.user,
-            location=location_text or f"{latitude}, {longitude}",
-            latitude=latitude,
-            longitude=longitude,
-        )
+        # Mobile lifecycle events can issue the same ping twice at startup.
+        # Serialize per technician and ignore an identical ping within one minute.
+        duplicate_window_start = timezone.now() - datetime.timedelta(seconds=60)
+        with transaction.atomic():
+            locked_technician = Technician.objects.select_for_update().get(pk=technician.pk)
+            duplicate = TechnicianLocation.objects.filter(
+                technician=locked_technician.user,
+                latitude=latitude,
+                longitude=longitude,
+                created_at__gte=duplicate_window_start,
+            ).exists()
+            if not duplicate:
+                TechnicianLocation.objects.create(
+                    tenant=locked_technician.tenant,
+                    technician=locked_technician.user,
+                    location=location_text or f"{latitude}, {longitude}",
+                    latitude=latitude,
+                    longitude=longitude,
+                )
 
         return Response(
             {
@@ -462,7 +474,7 @@ class TechnicianLocationPingView(APIView):
                 "latitude": latitude,
                 "longitude": longitude,
             },
-            status=status.HTTP_201_CREATED,
+            status=status.HTTP_200_OK if duplicate else status.HTTP_201_CREATED,
         )
 
 class TechnicianLocationTrackingView(APIView):
