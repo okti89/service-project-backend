@@ -5,6 +5,7 @@ from django.utils.html import format_html
 from import_export.admin import ImportExportModelAdmin
 
 from .models import User,UserDevice
+from technicians.services import ensure_technician_profile
 
 @admin.register(User)
 class CustomUserAdmin(ImportExportModelAdmin, BaseUserAdmin):
@@ -69,6 +70,7 @@ class CustomUserAdmin(ImportExportModelAdmin, BaseUserAdmin):
                 user.approval_status = 'approved'
                 user.is_active = True
                 user.save(update_fields=['approval_status', 'is_active'])
+                ensure_technician_profile(user)
                 updated += 1
         if updated:
             self.message_user(request, f'{updated} kullanıcı onaylandı.', level='success')
@@ -83,6 +85,7 @@ class CustomUserAdmin(ImportExportModelAdmin, BaseUserAdmin):
                 user.approval_status = 'rejected'
                 user.is_active = False
                 user.save(update_fields=['approval_status', 'is_active'])
+                ensure_technician_profile(user)
                 updated += 1
         if updated:
             self.message_user(request, f'{updated} kullanıcı reddedildi.', level='warning')
@@ -97,6 +100,7 @@ class CustomUserAdmin(ImportExportModelAdmin, BaseUserAdmin):
                 user.approval_status = 'pending'
                 user.is_active = False
                 user.save(update_fields=['approval_status', 'is_active'])
+                ensure_technician_profile(user)
                 updated += 1
         if updated:
             self.message_user(request, f'{updated} kullanıcı onay bekliyor olarak işaretlendi.', level='info')

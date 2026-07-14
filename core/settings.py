@@ -79,7 +79,7 @@ INSTALLED_APPS = [
     'accounts',
     'config',
     'customers',
-    'technicians',
+    'technicians.apps.TechniciansConfig',
     'services',
     'notifications',
     #'planners',

@@ -29,7 +29,7 @@ from .utils import (
     send_rejected_email,
 )
 from notifications.services import create_notification
-from technicians.models import Technician
+from technicians.services import ensure_technician_profile
 
 
 #admin işlemleri
@@ -106,6 +106,7 @@ class UserDetailAPIView(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         serializer.save()
+        ensure_technician_profile(user)
         if old_status != user.approval_status:
             if user.approval_status == "approved":
                 user.is_active = True
@@ -192,9 +193,7 @@ class UserApprovalListView(APIView):
         user.save(update_fields=["approval_status", "is_active"])
 
         if old_status != "approved" and new_status == "approved":
-            if user.user_type == "technician":
-
-                tech, created = Technician.objects.get_or_create(user=user)
+            ensure_technician_profile(user)
 
             create_notification(
                 user=user,
@@ -402,24 +401,21 @@ class CheckAuthView(APIView):
 
     def get(self, request):
         user = request.user
-        if not user.is_active:
+        if user.approval_status == "pending":
             return Response(
-                {"detail": "Hesabınız aktif değil. Yöneticinizle iletişime geçin."},
+                {"detail": "Hesabınız henüz onaylanmadı.", "account_status": "pending"},
                 status=status.HTTP_403_FORBIDDEN,
             )
-
-        if user.user_type == "technician":
-            if user.approval_status == "pending":
-                return Response(
-                    {"detail": "Hesabınız henüz onaylanmadı."},
-                    status=status.HTTP_403_FORBIDDEN,
-                )
-            if user.approval_status == "rejected":
-                return Response(
-                    {"detail": "Hesabınız reddedildi. Yöneticinizle iletişime geçin."},
-                    status=status.HTTP_403_FORBIDDEN,
-                )
-
+        if user.approval_status == "rejected":
+            return Response(
+                {"detail": "Hesabınız reddedildi. Yöneticinizle iletişime geçin.", "account_status": "rejected"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if not user.is_active:
+            return Response(
+                {"detail": "Hesabınız aktif değil. Yöneticinizle iletişime geçin.", "account_status": "deactivated"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         serializer = CheckAuthSerializer(user, context={"request": request})
         update_last_login(None, user)
         return Response(serializer.data, status=status.HTTP_200_OK)
