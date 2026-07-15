@@ -87,7 +87,7 @@ INSTALLED_APPS = [
     'hr',
     'reports',
     'feedback',
-    'tenants',
+    'tenants.apps.TenantsConfig',
     'maps',
 ]
 

@@ -119,7 +119,7 @@ def _calculate_service_totals(service):
 def _money(value):
     amount = _to_float(value)
     formatted = f"{amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    return f"{formatted} ₺"
+    return f"{formatted} TL"
 
 
 def _text(value, fallback='-'):
@@ -194,7 +194,7 @@ def _technician_name(service):
     return str(technician) if technician else '-'
 
 
-def _device_name(service):
+def _device_type_name(service):
     parts = [
         getattr(getattr(service, 'device_type', None), 'name', None),
         getattr(getattr(service, 'device_brand', None), 'name', None),
@@ -376,7 +376,7 @@ def generate_service_form_pdf(service):
 
     elements.append(_info_row('Müşteri', f': {service.customer_full_name or "-"}', label_style, value_style, usable_width))
     elements.append(_info_row('Telefon', f': {service.customer_phone or "-"}', label_style, value_style, usable_width))
-    elements.append(_info_row('Cihaz', f': {_device_name(service)}', label_style, value_style, usable_width))
+    elements.append(_info_row('Cihaz', f': {_device_type_name(service)}', label_style, value_style, usable_width))
     elements.append(_info_row('Marka', f': {_device_brand_name(service)}', label_style, value_style, usable_width))
     elements.append(_info_row('Model', f': {_device_model_name(service)}', label_style, value_style, usable_width))
     elements.append(_info_row('Arıza', f': {service.fault_description or "-"}', label_style, value_style, usable_width))
@@ -598,7 +598,7 @@ def generate_warranty_certificate_pdf(warranty):
     elements.append(_divider(usable_width))
 
     elements.append(_info_row('Müşteri', f': {service.customer_full_name or "-"}', label_style, value_style, usable_width))
-    elements.append(_info_row('Cihaz', f': {_device_name(service)}', label_style, value_style, usable_width))
+    elements.append(_info_row('Cihaz', f': {_device_type_name(service)}', label_style, value_style, usable_width))
     elements.append(_info_row('Marka', f': {_device_brand_name(service)}', label_style, value_style, usable_width))
     elements.append(_info_row('Model', f': {_device_model_name(service)}', label_style, value_style, usable_width))
     elements.append(_divider(usable_width))
