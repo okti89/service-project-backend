@@ -124,6 +124,7 @@ class UserSerializer(serializers.ModelSerializer):
             "avatar",
             "avatar_url",
             "is_staff",
+            "is_platform_admin",
             "is_active",
             "user_type",
             "user_type_display",
@@ -132,7 +133,7 @@ class UserSerializer(serializers.ModelSerializer):
             "date_joined",
             "tenant_code",
         )
-        read_only_fields = ("id", "is_staff", "is_superuser", "date_joined")
+        read_only_fields = ("id", "is_staff", "is_superuser", "is_platform_admin", "date_joined")
 
     def get_tenant_code(self, obj):
         tenant = getattr(obj, 'tenant', None)
@@ -404,6 +405,7 @@ class CheckAuthSerializer(serializers.ModelSerializer):
             "full_name",
             "avatar",
             "is_staff",
+            "is_platform_admin",
             "is_active",
             "approval_status",
             "approval_status_display",

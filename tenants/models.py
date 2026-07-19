@@ -26,3 +26,35 @@ class Tenant(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.code})"
+
+
+class TenantMembership(models.Model):
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='memberships')
+    period_number = models.PositiveIntegerField(editable=False)
+    premium_started_at = models.DateField()
+    renewal_date = models.DateField(editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-period_number']
+        constraints = [
+            models.UniqueConstraint(fields=['tenant', 'period_number'], name='unique_tenant_membership_period'),
+        ]
+
+    @staticmethod
+    def one_year_after(value):
+        try:
+            return value.replace(year=value.year + 1)
+        except ValueError:
+            return value.replace(year=value.year + 1, month=2, day=28)
+
+    def save(self, *args, **kwargs):
+        if not self.period_number:
+            last_period = TenantMembership.objects.filter(tenant=self.tenant).order_by('-period_number').values_list('period_number', flat=True).first()
+            self.period_number = (last_period or 0) + 1
+        if not self.renewal_date:
+            self.renewal_date = self.one_year_after(self.premium_started_at)
+        super().save(*args, **kwargs)
+
+    def renew(self):
+        return TenantMembership.objects.create(tenant=self.tenant, premium_started_at=self.renewal_date)

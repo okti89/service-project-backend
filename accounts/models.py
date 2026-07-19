@@ -4,6 +4,7 @@ from datetime import timedelta
 from accounts.utils import process_image
 
 from django.db import models
+from django.db.models import Q
 from django.utils import timezone
 from django.conf import settings
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
@@ -82,6 +83,7 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
+    is_platform_admin = models.BooleanField(default=False)
 
     date_joined = models.DateTimeField(default=timezone.now)
 
@@ -95,7 +97,12 @@ class User(AbstractBaseUser, PermissionsMixin):
             models.UniqueConstraint(
                 fields=["tenant", "phone_number"],
                 name="uniq_user_tenant_phone"
-            )
+            ),
+            models.UniqueConstraint(
+                fields=['is_platform_admin'],
+                condition=Q(is_platform_admin=True),
+                name='single_platform_admin_user',
+            ),
         ]
 
     def __str__(self):

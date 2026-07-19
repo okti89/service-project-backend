@@ -39,6 +39,13 @@ reverse proxy or object storage in front of media delivery later.
 The Dockerfile build pack uses the Dockerfile directly; Coolify documents the
 backend base-directory and port configuration for this deployment type.
 
+## Membership renewal reminder
+
+Create a daily Coolify scheduled task with the cron expression `0 9 * * *` and the command:
+
+`python manage.py notify_membership_renewals --days 30`
+
+It sends the platform administrator one in-app notification and one email listing the tenants whose current membership period ends within 30 days.
 ## Daily service summary
 
 Create an application scheduled task in Coolify with the cron expression

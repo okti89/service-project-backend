@@ -9,9 +9,9 @@ from technicians.services import ensure_technician_profile
 
 @admin.register(User)
 class CustomUserAdmin(ImportExportModelAdmin, BaseUserAdmin):
-    list_display = ('email', 'phone_number', 'first_name', 'last_name', 'tenant', 'user_type','approval_status_badge','is_staff', 'is_active', 'avatar_thumb')
+    list_display = ('email', 'phone_number', 'first_name', 'last_name', 'tenant', 'user_type','approval_status_badge','is_platform_admin', 'is_staff', 'is_active', 'avatar_thumb')
     list_display_links = ('email', 'first_name', 'last_name')
-    list_filter = ('tenant', 'is_staff', 'approval_status','user_type','is_superuser', 'is_active')
+    list_filter = ('tenant', 'is_platform_admin', 'is_staff', 'approval_status','user_type','is_superuser', 'is_active')
     search_fields = ('email', 'first_name', 'last_name', 'phone_number')
     ordering = ('email',)
     readonly_fields = ('id', 'date_joined', 'avatar_thumb')
@@ -23,7 +23,7 @@ class CustomUserAdmin(ImportExportModelAdmin, BaseUserAdmin):
         (_('Profil'), {'fields': ('avatar', 'avatar_thumb')}),
         (_('Parola Sıfırlama'), {'fields': ('password_reset_code', 'password_reset_code_sent_at')}),
         (_('Yetkiler'), {
-            'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions'),
+            'fields': ('is_active', 'is_platform_admin', 'is_staff', 'is_superuser', 'groups', 'user_permissions'),
         }),
         (_('Önemli Tarihler'), {'fields': ('last_login', 'date_joined')}),
         (_('Tenant'), {'fields': ('tenant',)}),
