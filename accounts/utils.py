@@ -55,7 +55,7 @@ def _resolve_panel_url(tenant=None):
         panel_url = (getattr(config, "panel_url", None) or "").strip() if config else ""
         if panel_url:
             return panel_url
-    return getattr(settings, "FRONTEND_URL",)
+    return getattr(settings, "FRONTEND_URL", "")
 
 def send_password_reset_email(email, code, full_name):
     """
