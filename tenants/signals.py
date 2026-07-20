@@ -9,6 +9,8 @@ def create_tenant_defaults(sender, instance, created, **kwargs):
     if not created:
         return
 
+    instance.start_trial(days=5)
+
     from accounting.models import Account
     from config.models import CompanyConfig
     from services.models import DEFAULT_SERVICE_STATUSES, PaymentMethod, ServiceStatus

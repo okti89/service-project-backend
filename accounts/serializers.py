@@ -75,6 +75,9 @@ class UserCreateSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         tenant = resolve_tenant_from_request(request)
 
+        if tenant and not tenant.subscription_info()['is_active']:
+            raise serializers.ValidationError({"detail": "Tenant subscription has expired. New user registration is unavailable."})
+
         phone = (attrs.get("phone_number") or "").strip()
 
         if tenant and phone:
@@ -165,6 +168,10 @@ class RegisterSerializer(serializers.ModelSerializer):
 
         if not tenant:
             raise serializers.ValidationError({"detail": "Geçersiz firma kodu."})
+
+
+        if not tenant.subscription_info()['is_active']:
+            raise serializers.ValidationError({"detail": "Tenant subscription has expired. New user registration is unavailable."})
 
         phone = (attrs.get("phone_number") or "").strip()
 
@@ -374,6 +381,7 @@ class CheckAuthSerializer(serializers.ModelSerializer):
     is_technician = serializers.SerializerMethodField()
     is_manager = serializers.SerializerMethodField()
     mobile_permissions = serializers.SerializerMethodField()
+    subscription = serializers.SerializerMethodField()
 
     tenant_code = serializers.CharField(
         source="tenant.code",
@@ -420,6 +428,7 @@ class CheckAuthSerializer(serializers.ModelSerializer):
             "mobile_permissions",
             "tenant_code",
             "technician_profile_id",
+            "subscription",
         )
 
     # -------------------------
@@ -445,6 +454,15 @@ class CheckAuthSerializer(serializers.ModelSerializer):
     # -------------------------
     # Permissions
     # -------------------------
+
+    def get_subscription(self, obj):
+        tenant = getattr(obj, 'tenant', None)
+        if not tenant:
+            return {'status': 'expired', 'is_active': False, 'plan': None, 'ends_at': None, 'days_remaining': 0}
+        subscription = tenant.subscription_info()
+        if subscription.get('ends_at'):
+            subscription['ends_at'] = subscription['ends_at'].isoformat()
+        return subscription
 
     def get_mobile_permissions(self, obj):
         perms = getattr(

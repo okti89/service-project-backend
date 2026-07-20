@@ -27,6 +27,7 @@ class Command(BaseCommand):
         memberships = list(
             TenantMembership.objects.filter(
                 pk=Subquery(latest_membership_id),
+                plan=TenantMembership.Plan.PREMIUM,
                 renewal_date__range=(today, deadline),
             ).select_related('tenant').order_by('renewal_date')
         )

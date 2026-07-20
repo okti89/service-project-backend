@@ -14,8 +14,8 @@ class TenantAdmin(admin.ModelAdmin):
 
 @admin.register(TenantMembership)
 class TenantMembershipAdmin(admin.ModelAdmin):
-    list_display = ('tenant', 'period_number', 'premium_started_at', 'renewal_date', 'created_at')
-    list_filter = ('tenant',)
+    list_display = ('tenant', 'plan', 'period_number', 'premium_started_at', 'renewal_date', 'created_at')
+    list_filter = ('plan', 'tenant')
     search_fields = ('tenant__name', 'tenant__code')
     readonly_fields = ('period_number', 'renewal_date', 'created_at')
     actions = ('renew_selected_memberships',)

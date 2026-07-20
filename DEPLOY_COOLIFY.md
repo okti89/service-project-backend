@@ -109,3 +109,9 @@ Command:
 
 Run the command with `--dry-run` first if you want to review the number of
 notifications that will be deleted.
+## Subscription expiry reminders
+
+```text
+Cron: 0 9 * * *
+Command: python manage.py send_subscription_expiry_reminders
+```
