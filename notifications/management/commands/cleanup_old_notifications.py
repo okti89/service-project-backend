@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 from django.core.management.base import BaseCommand
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.utils import timezone
 
 from notifications.models import Notification
@@ -42,7 +42,7 @@ class Command(BaseCommand):
         cutoff = timezone.now() - timedelta(days=days)
         self.stdout.write(f"Referans tarihi: {cutoff.isoformat()} ({days} gun once)")
 
-        tenant_filter = {"notifications__created_at__lt": cutoff}
+        tenant_filter = Q(notifications__created_at__lt=cutoff)
         tenants_qs = Tenant.objects.all()
         if tenant_id:
             tenants_qs = tenants_qs.filter(id=tenant_id)
