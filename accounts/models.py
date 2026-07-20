@@ -57,6 +57,8 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     password_reset_code = models.CharField(max_length=4, null=True, blank=True)
     password_reset_code_sent_at = models.DateTimeField(null=True, blank=True)
+    pending_reminder_sent_at = models.DateTimeField(null=True, blank=True)
+    pending_reminder_count = models.PositiveIntegerField(default=0)
 
     APPROVAL_STATUS_CHOICES = [
         ("pending", "Onay Bekliyor"),
