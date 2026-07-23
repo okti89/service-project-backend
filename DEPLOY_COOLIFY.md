@@ -81,16 +81,14 @@ Command:
 
 `python manage.py send_operational_alerts --only-status-reminders`
 
-Create two scheduled tasks for assignment and receivable alerts. This starts the
-first run at 08:30 and continues every 30 minutes:
+Create one scheduled task for assignment, manager overdue, and receivable alerts.
+It checks every 30 minutes, but sends the first alerts at 08:30:
 
-`30 8 * * *`
+`*/30 8-20 * * *`
 
-`*/30 9-20 * * *`
+Command:
 
-Command for both tasks:
-
-`python manage.py send_operational_alerts --exclude-status-reminders`
+`python manage.py send_operational_alerts --exclude-status-reminders --not-before 08:30`
 
 Each recipient receives at most one alert of each type per service per day.
 
