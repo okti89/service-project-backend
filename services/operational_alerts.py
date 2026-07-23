@@ -116,7 +116,7 @@ def send_operational_alerts(
             if include_technician_status_reminders and technician_user and technician_user.is_active:
                 technician_message = (
                     f"{customer} adlı müşteriye ait, {address} adresinde "
-                    f"{appointment_time} saatinde planlanan servisin durumunu güncelleyin."
+                    f"{appointment_time} saatinde planlanan servis hatırlatması."
                 )
                 sent['overdue'] += _notify_once(
                     technician_user,
