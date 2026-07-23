@@ -49,7 +49,7 @@ It sends the platform administrator one in-app notification and one email listin
 ## Daily service summary
 
 Create an application scheduled task in Coolify with the cron expression
-`0 8 * * *` and the command:
+`0 7 * * *` and the command:
 
 `python manage.py send_daily_service_summaries`
 
@@ -73,14 +73,24 @@ or with an open shift are skipped.
 
 ## Operational alerts
 
-Create a Coolify scheduled task for unassigned, overdue, and unpaid service
-alerts:
+Create a scheduled task for service status update reminders, starting at 08:00:
 
-`*/30 7-20 * * *`
+`*/30 8-20 * * *`
 
 Command:
 
-`python manage.py send_operational_alerts`
+`python manage.py send_operational_alerts --only-status-reminders`
+
+Create two scheduled tasks for assignment and receivable alerts. This starts the
+first run at 08:30 and continues every 30 minutes:
+
+`30 8 * * *`
+
+`*/30 9-20 * * *`
+
+Command for both tasks:
+
+`python manage.py send_operational_alerts --exclude-status-reminders`
 
 Each recipient receives at most one alert of each type per service per day.
 
