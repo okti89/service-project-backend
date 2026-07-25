@@ -11,20 +11,9 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         group = parser.add_mutually_exclusive_group()
-        group.add_argument(
-            '--only-status-reminders',
-            action='store_true',
-            help='Yalnizca teknisyenlere servis durumu guncelleme hatirlatmasi gonderir.',
-        )
-        group.add_argument(
-            '--exclude-status-reminders',
-            action='store_true',
-            help='Teknisyen servis durum hatirlatmalarini atlayarak diger operasyon uyarilarini gonderir.',
-        )
-        parser.add_argument(
-            '--not-before',
-            help='Bu yerel saatten once bildirim gondermeden cikar (HH:MM).',
-        )
+        group.add_argument('--only-status-reminders', action='store_true', help='Yalnizca teknisyen servis hatirlatmalarini gonderir.')
+        group.add_argument('--exclude-status-reminders', action='store_true', help='Teknisyen servis hatirlatmalarini atlayarak diger operasyon uyarilarini gonderir.')
+        parser.add_argument('--not-before', help='Bu yerel saatten once bildirim gondermeden cikar (HH:MM).')
 
     def handle(self, *args, **options):
         not_before = options.get('not_before')
@@ -38,14 +27,16 @@ class Command(BaseCommand):
                 return
 
         only_status_reminders = options['only_status_reminders']
+        exclude_status_reminders = options['exclude_status_reminders']
         result = send_operational_alerts(
             include_unassigned=not only_status_reminders,
             include_overdue_manager_alerts=not only_status_reminders,
-            include_technician_status_reminders=not options['exclude_status_reminders'],
+            include_technician_schedule_reminders=not exclude_status_reminders,
+            include_technician_status_reminders=not exclude_status_reminders,
             include_receivable=not only_status_reminders,
         )
         self.stdout.write(self.style.SUCCESS(
             f"Operasyon uyarilari tamamlandi. Tarih: {result['date']}, "
-            f"atanmamis: {result['unassigned']}, geciken: {result['overdue']}, "
-            f"tahsilat: {result['receivable']}"
+            f"atanmamis: {result['unassigned']}, planlanan: {result['scheduled']}, "
+            f"geciken: {result['overdue']}, tahsilat: {result['receivable']}"
         ))
