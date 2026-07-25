@@ -345,16 +345,16 @@ def _notify_technician_assignment(service, old_technician_id=None):
         old_technician = Technician.objects.select_related('user').filter(pk=old_technician_id).first()
         old_technician_user = getattr(old_technician, 'user', None)
 
-    service_no = service.receipt_number or '-'
+    customer_name = service.customer_full_name or 'Müşteri'
     context = _service_notification_context(service)
 
     if technician_user:
         if old_technician_user and old_technician_user.id != technician_user.id:
             title = 'Servis ataması güncellendi'
-            message = f"#{service_no} no'lu servis görevi size devredildi.\n{context}"
+            message = f"{customer_name} adlı müşteriye ait servis görevi size devredildi.\n{context}"
         else:
             title = 'Yeni servis ataması'
-            message = f"#{service_no} no'lu yeni servis size atandı.\n{context}"
+            message = f"{customer_name} adlı müşteriye ait yeni servis size atandı.\n{context}"
         create_notification(
             user=technician_user,
             title=title,
@@ -365,9 +365,9 @@ def _notify_technician_assignment(service, old_technician_id=None):
 
     if old_technician_user and (not technician_user or old_technician_user.id != technician_user.id):
         if technician_user:
-            message = f"#{service_no} no'lu servis görevi başka bir teknisyene devredildi.\n{context}"
+            message = f"{customer_name} adlı müşteriye ait servis görevi başka bir teknisyene devredildi.\n{context}"
         else:
-            message = f"#{service_no} no'lu servis görevi atama listenizden çıkarıldı.\n{context}"
+            message = f"{customer_name} adlı müşteriye ait servis görevi atama listenizden kaldırıldı.\n{context}"
         create_notification(
             user=old_technician_user,
             title='Servis görevinde güncelleme',
@@ -387,7 +387,6 @@ def _notify_technician_schedule_change(service, actor_user, old_scheduled_date, 
     if not technician_user or technician_user.id == getattr(actor_user, 'id', None):
         return
 
-    service_no = service.receipt_number or '-'
     customer_name = service.customer_full_name or 'Müşteri'
     address = str(service.customer_address or '').strip() or 'Adres bilgisi bulunmuyor'
     appointment = _format_service_schedule_label(service.scheduled_date)
@@ -395,7 +394,7 @@ def _notify_technician_schedule_change(service, actor_user, old_scheduled_date, 
         user=technician_user,
         title='Randevunuz Güncellendi',
         message=(
-            f"#{service_no} no'lu servisin randevu bilgileri güncellendi.\n"
+            f"{customer_name} adlı müşteriye ait servis randevusu güncellendi.\n"
             f"Müşteri: {customer_name}\nAdres: {address}\nRandevu: {appointment}"
         ),
         related_id=str(service.id),
@@ -407,7 +406,7 @@ def _notify_status_change_by_actor(service, actor_user, old_status):
     if not actor_user or old_status == service.service_status:
         return
 
-    service_no = service.receipt_number or '-'
+    customer_name = service.customer_full_name or 'Müşteri'
     old_label = _status_label(old_status)
     new_label = _status_label(service.service_status)
     context = _service_notification_context(service)
@@ -421,7 +420,10 @@ def _notify_status_change_by_actor(service, actor_user, old_status):
             create_notification(
                 user=technician_user,
                 title='Servis durumu güncellendi',
-                message=f"#{service_no} no'lu servisin durumu {old_label} -> {new_label} olarak güncellendi.\n{context}",
+                message=(
+                    f"{customer_name} adlı müşteriye ait servisin durumu "
+                    f"{old_label} -> {new_label} olarak güncellendi.\n{context}"
+                ),
                 related_id=str(service.id),
                 related_screen='service_detail',
             )
@@ -439,7 +441,10 @@ def _notify_status_change_by_actor(service, actor_user, old_status):
             create_notification(
                 user=admin_user,
                 title='Teknisyen servis durumu güncelledi',
-                message=f"{actor_user.get_full_name()} #{service_no} no'lu servisin durumunu {old_label} -> {new_label} olarak güncelledi.\n{context}",
+                message=(
+                    f"{actor_user.get_full_name()} adlı teknisyen, {customer_name} adlı müşteriye ait "
+                    f"servisin durumunu {old_label} -> {new_label} olarak güncelledi.\n{context}"
+                ),
                 related_id=str(service.id),
                 related_screen='service_detail',
             )
