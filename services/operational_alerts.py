@@ -102,7 +102,10 @@ def send_operational_alerts(
         for service in services:
             service_no, customer, address, appointment, appointment_time = _service_context(service)
             if include_overdue_manager_alerts:
-                manager_message = f"#{service_no} no'lu servis planlanan saati geçti ancak durumu henüz tamamlanmadı.\nMüşteri: {customer}\nAdres: {address}\nRandevu: {appointment}"
+                manager_message = (
+                    f"{customer} adlı müşteriye ait, {address} adresinde "
+                    f"{appointment_time} saatinde planlanan servis hatırlatması."
+                )
                 for manager in _manager_users(service.tenant):
                     sent['overdue'] += _notify_once(manager, OVERDUE_TITLE, manager_message, service, today)
 
