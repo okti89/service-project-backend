@@ -101,10 +101,11 @@ def send_operational_alerts(
         services = _active_service_queryset().filter(scheduled_date__lt=now).select_related('tenant', 'technician__user')
         for service in services:
             service_no, customer, address, appointment, appointment_time = _service_context(service)
+            appointment_date = timezone.localtime(service.scheduled_date).strftime('%d.%m.%Y')
             if include_overdue_manager_alerts:
                 manager_message = (
                     f"{customer} adlı müşteriye ait, {address} adresinde "
-                    f"{appointment_time} saatinde planlanan servis hatırlatması."
+                    f"{appointment_date} tarihinde {appointment_time} saatinde planlanan servis hatırlatması."
                 )
                 for manager in _manager_users(service.tenant):
                     sent['overdue'] += _notify_once(manager, OVERDUE_TITLE, manager_message, service, today)
@@ -116,7 +117,10 @@ def send_operational_alerts(
                 and technician_user
                 and technician_user.is_active
             ):
-                message = f"{customer} adlı müşteriye ait, {address} adresinde {appointment_time} saatinde planlanan servis için durum hatırlatması."
+                message = (
+                    f"{customer} adlı müşteriye ait, {address} adresinde {appointment_date} tarihinde "
+                    f"{appointment_time} saatinde planlanan servis için durum hatırlatması."
+                )
                 sent['overdue'] += _notify_once(technician_user, TECHNICIAN_OVERDUE_TITLE, message, service, today)
 
     if include_receivable:
