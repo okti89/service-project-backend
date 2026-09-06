@@ -1,10 +1,17 @@
 from django.contrib import admin
 
+from core.admin import TurkishAdminMixin
 from .models import Tenant, TenantMembership
 
 
 @admin.register(Tenant)
-class TenantAdmin(admin.ModelAdmin):
+class TenantAdmin(TurkishAdminMixin, admin.ModelAdmin):
+    admin_verbose_name = "Firma"
+    admin_verbose_name_plural = "Firmalar"
+    admin_field_labels = {
+        "name": "Firma Adı", "code": "Firma Kodu", "app_name": "Uygulama Adı", "features": "Özellikler",
+        "is_active": "Aktif", "created_at": "Oluşturulma Tarihi", "updated_at": "Güncellenme Tarihi",
+    }
     list_display = ("name", "code", "app_name", "is_active", "created_at", "updated_at")
     list_filter = ("is_active",)
     search_fields = ("name", "code", "app_name")
@@ -13,7 +20,13 @@ class TenantAdmin(admin.ModelAdmin):
 
 
 @admin.register(TenantMembership)
-class TenantMembershipAdmin(admin.ModelAdmin):
+class TenantMembershipAdmin(TurkishAdminMixin, admin.ModelAdmin):
+    admin_verbose_name = "Firma Üyeliği"
+    admin_verbose_name_plural = "Firma Üyelikleri"
+    admin_field_labels = {
+        "tenant": "Firma", "plan": "Plan", "period_number": "Dönem Numarası",
+        "premium_started_at": "Premium Başlangıcı", "renewal_date": "Yenileme Tarihi", "created_at": "Oluşturulma Tarihi",
+    }
     list_display = ('tenant', 'plan', 'period_number', 'premium_started_at', 'renewal_date', 'created_at')
     list_filter = ('plan', 'tenant')
     search_fields = ('tenant__name', 'tenant__code')

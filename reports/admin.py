@@ -1,3 +1,3 @@
 from django.contrib import admin
 
-# Register your models here.
+# Rapor uygulamasında kalıcı bir model bulunmadığı için admin kaydı yoktur.

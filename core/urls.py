@@ -26,6 +26,7 @@ urlpatterns = [
     path('api/services/', include('services.urls')),
     path('api/technicians/', include('technicians.urls')),
     path('api/products/', include('products.urls')),
+    path('api/quotes/', include('quotes.urls')),
     path("api/global-search/", GlobalSearchView.as_view(), name="global-search"),
     path("api/maps/", include("maps.urls")),
     path("api/feedback/", include("feedback.urls")),

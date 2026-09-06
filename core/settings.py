@@ -84,6 +84,7 @@ INSTALLED_APPS = [
     'notifications',
     #'planners',
     'products',
+    'quotes.apps.QuotesConfig',
     'hr',
     'reports',
     'feedback',
