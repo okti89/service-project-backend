@@ -1,7 +1,7 @@
 from django.urls import path
 from .views import (BrandListCreateView, ModelListCreateView, 
                     TechnicianServiceListCreateView, TechnicianServiceRetrieveUpdateDestroyView, 
-                    AdminServiceListCreateView, AdminServiceRetrieveUpdateDestroyView, DeviceTypeListCreateView, PaymentMethodListCreateView,
+                    AdminServiceListCreateView, AdminServiceRetrieveUpdateDestroyView, DeviceTypeListCreateView, PaymentMethodListCreateView, WeeklyScheduledServiceSummaryView,
                     ServiceOperationsListCreateView, ServiceOperationTemplateListCreateView, ServicePaymentListCreateView, ServicePaymentRefundView, ServicePhotoListCreateView, ServiceSignatureListCreateView,
                     PublicServiceListView, PublicServiceDetailView, PublicServiceFormPDFView,
                     ServiceFormPDFView, ServiceWarrantyPDFView, ServiceFormEmailView, ServiceWhatsAppStatusLinkView, ServiceStatusListView)
@@ -21,6 +21,7 @@ urlpatterns = [
     path('technician-services/', TechnicianServiceListCreateView.as_view(), name='technician-service-list-create'),
     path('technician-services/<uuid:pk>/', TechnicianServiceRetrieveUpdateDestroyView.as_view(), name='technician-service-retrieve-update-destroy'),
     path('admin-services/', AdminServiceListCreateView.as_view(), name='admin-service-list-create'),
+    path('weekly-scheduled-summary/', WeeklyScheduledServiceSummaryView.as_view(), name='weekly-scheduled-service-summary'),
     path('admin-services/<uuid:pk>/', AdminServiceRetrieveUpdateDestroyView.as_view(), name='admin-service-retrieve-update-destroy'),
     path('admin-services/<uuid:pk>/form-pdf/', ServiceFormPDFView.as_view(), name='admin-service-form-pdf'),
     path('admin-services/<uuid:pk>/warranty-pdf/', ServiceWarrantyPDFView.as_view(), name='admin-service-warranty-pdf'),

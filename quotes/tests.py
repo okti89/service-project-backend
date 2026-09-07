@@ -81,6 +81,7 @@ class QuoteAPITests(TestCase):
         self.product.refresh_from_db()
         self.assertEqual(response.data["total_price"], "6100.00")
         self.assertEqual(quote.items.count(), 2)
+        self.assertEqual(quote.status, Quote.STATUS_DRAFT)
         self.assertEqual(self.product.stock_quantity, 10)
         self.assertFalse(StockMovement.objects.exists())
 
@@ -157,6 +158,7 @@ class QuoteAPITests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         quote.refresh_from_db()
         self.assertIsNotNone(quote.sent_at)
+        self.assertEqual(quote.status, Quote.STATUS_SENT)
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, [self.customer.email])
         self.assertEqual(mail.outbox[0].attachments[0][2], "application/pdf")
@@ -173,6 +175,62 @@ class QuoteAPITests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(len(mail.outbox), 0)
 
+    def test_status_can_be_changed_manually_until_quote_is_converted(self):
+        _, quote = self.create_quote()
+
+        sent_response = self.client.post(
+            f"/api/quotes/{quote.id}/set-status/",
+            {"status": Quote.STATUS_SENT},
+            format="json",
+        )
+        self.assertEqual(sent_response.status_code, 200, sent_response.data)
+        quote.refresh_from_db()
+        self.assertEqual(quote.status, Quote.STATUS_SENT)
+        self.assertIsNotNone(quote.sent_at)
+
+        cancelled_response = self.client.post(
+            f"/api/quotes/{quote.id}/set-status/",
+            {"status": Quote.STATUS_CANCELLED},
+            format="json",
+        )
+        self.assertEqual(cancelled_response.status_code, 200, cancelled_response.data)
+        quote.refresh_from_db()
+        self.assertEqual(quote.status, Quote.STATUS_CANCELLED)
+
+        draft_response = self.client.post(
+            f"/api/quotes/{quote.id}/set-status/",
+            {"status": Quote.STATUS_DRAFT},
+            format="json",
+        )
+        self.assertEqual(draft_response.status_code, 200, draft_response.data)
+        quote.refresh_from_db()
+        self.assertEqual(quote.status, Quote.STATUS_DRAFT)
+        self.assertIsNone(quote.sent_at)
+
+        converted_response = self.client.post(
+            f"/api/quotes/{quote.id}/set-status/",
+            {"status": Quote.STATUS_CONVERTED},
+            format="json",
+        )
+        self.assertEqual(converted_response.status_code, 400)
+
+    def test_cancelled_quote_must_be_reactivated_before_conversion(self):
+        _, quote = self.create_quote()
+        self.client.post(
+            f"/api/quotes/{quote.id}/set-status/",
+            {"status": Quote.STATUS_CANCELLED},
+            format="json",
+        )
+
+        response = self.client.post(
+            f"/api/quotes/{quote.id}/convert-to-service/",
+            {"scheduled_date": (timezone.now() + timedelta(days=1)).isoformat()},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Service.objects.filter(source_quote=quote).exists())
+
     def test_convert_to_service_creates_service_items_and_stock_movement(self):
         _, quote = self.create_quote()
 
@@ -186,6 +244,7 @@ class QuoteAPITests(TestCase):
         quote.refresh_from_db()
         self.product.refresh_from_db()
         self.assertIsNotNone(quote.converted_service_id)
+        self.assertEqual(quote.status, Quote.STATUS_CONVERTED)
         self.assertTrue(Service.objects.filter(pk=quote.converted_service_id).exists())
         self.assertEqual(ServiceOperations.objects.filter(service=quote.converted_service).count(), 2)
         self.assertEqual(self.product.stock_quantity, 8)

@@ -8,6 +8,17 @@ from django.db import IntegrityError, models
 
 
 class Quote(models.Model):
+    STATUS_DRAFT = "draft"
+    STATUS_SENT = "sent"
+    STATUS_CANCELLED = "cancelled"
+    STATUS_CONVERTED = "converted"
+    STATUS_CHOICES = [
+        (STATUS_DRAFT, "Taslak"),
+        (STATUS_SENT, "Gönderildi"),
+        (STATUS_CANCELLED, "İptal Edildi"),
+        (STATUS_CONVERTED, "Servise Dönüştürüldü"),
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey(
         "tenants.Tenant",
@@ -22,6 +33,7 @@ class Quote(models.Model):
     )
     note = models.TextField(blank=True)
     valid_until = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_DRAFT)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

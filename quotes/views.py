@@ -14,7 +14,7 @@ from services.models import Service, ServiceOperations
 from .models import Quote
 from .pdf_utils import generate_quote_pdf
 from .permissions import IsQuoteManager
-from .serializers import QuoteConvertSerializer, QuoteEmailSerializer, QuoteSerializer
+from .serializers import QuoteConvertSerializer, QuoteEmailSerializer, QuoteSerializer, QuoteStatusSerializer
 
 
 class QuoteViewSet(viewsets.ModelViewSet):
@@ -90,6 +90,26 @@ class QuoteViewSet(viewsets.ModelViewSet):
         self._mark_sent(quote)
         return Response({"sent_at": quote.sent_at})
 
+    @action(detail=True, methods=["post"], url_path="set-status")
+    def set_status(self, request, pk=None):
+        quote = self.get_object()
+        if quote.converted_service_id or quote.status == Quote.STATUS_CONVERTED:
+            return Response(
+                {"detail": "Servise dönüştürülen teklifin durumu değiştirilemez."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        payload = QuoteStatusSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        next_status = payload.validated_data["status"]
+        quote.status = next_status
+        if next_status == Quote.STATUS_SENT and not quote.sent_at:
+            quote.sent_at = timezone.now()
+        elif next_status == Quote.STATUS_DRAFT:
+            quote.sent_at = None
+        quote.save(update_fields=["status", "sent_at", "updated_at"])
+        return Response(QuoteSerializer(quote, context={"request": request}).data)
+
     @action(detail=True, methods=["post"], url_path="convert-to-service")
     def convert_to_service(self, request, pk=None):
         serializer = QuoteConvertSerializer(data=request.data, context={"request": request})
@@ -106,6 +126,11 @@ class QuoteViewSet(viewsets.ModelViewSet):
                         "detail": "Teklif daha once servise donusturulmus.",
                         "service_id": quote.converted_service_id,
                     },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if quote.status == Quote.STATUS_CANCELLED:
+                return Response(
+                    {"detail": "İptal edilen teklif servise dönüştürülemez."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
@@ -132,7 +157,8 @@ class QuoteViewSet(viewsets.ModelViewSet):
                 )
 
             quote.converted_service = service
-            quote.save(update_fields=["converted_service", "updated_at"])
+            quote.status = Quote.STATUS_CONVERTED
+            quote.save(update_fields=["converted_service", "status", "updated_at"])
 
         return Response(
             {
@@ -145,6 +171,11 @@ class QuoteViewSet(viewsets.ModelViewSet):
 
     @staticmethod
     def _mark_sent(quote):
+        update_fields = ["updated_at"]
         if not quote.sent_at:
             quote.sent_at = timezone.now()
-            quote.save(update_fields=["sent_at", "updated_at"])
+            update_fields.append("sent_at")
+        if quote.status != Quote.STATUS_CONVERTED:
+            quote.status = Quote.STATUS_SENT
+            update_fields.append("status")
+        quote.save(update_fields=list(dict.fromkeys(update_fields)))

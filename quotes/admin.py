@@ -26,15 +26,16 @@ class QuoteAdmin(TurkishAdminMixin, admin.ModelAdmin):
         "tenant": "Firma",
         "note": "Not",
         "valid_until": "Geçerlilik Tarihi",
+        "status": "Durum",
         "created_by": "Oluşturan",
         "converted_service": "Dönüştürülen Servis",
         "sent_at": "Gönderilme Tarihi",
         "created_at": "Oluşturulma Tarihi",
         "updated_at": "Güncellenme Tarihi",
     }
-    list_display = ("quote_number", "customer", "tenant", "quote_total", "valid_until", "sent_at", "converted_service")
+    list_display = ("quote_number", "customer", "tenant", "status", "quote_total", "valid_until", "sent_at", "converted_service")
     search_fields = ("quote_number", "customer__full_name", "customer__phone_number")
-    list_filter = ("tenant", "valid_until", "sent_at", "created_at")
+    list_filter = ("tenant", "status", "valid_until", "sent_at", "created_at")
     autocomplete_fields = ("customer", "created_by", "converted_service")
     readonly_fields = ("quote_number", "quote_total", "created_at", "updated_at")
     date_hierarchy = "created_at"

@@ -78,6 +78,7 @@ class QuoteSerializer(serializers.ModelSerializer):
             "customer_detail",
             "note",
             "valid_until",
+            "status",
             "items",
             "total_price",
             "created_by",
@@ -90,6 +91,7 @@ class QuoteSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "id",
             "quote_number",
+            "status",
             "created_by",
             "converted_service",
             "sent_at",
@@ -188,3 +190,13 @@ class QuoteEmailSerializer(serializers.Serializer):
     email = serializers.EmailField(required=False, allow_blank=True)
     subject = serializers.CharField(required=False, allow_blank=True, max_length=255)
     message = serializers.CharField(required=False, allow_blank=True)
+
+
+class QuoteStatusSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(
+        choices=[
+            Quote.STATUS_DRAFT,
+            Quote.STATUS_SENT,
+            Quote.STATUS_CANCELLED,
+        ]
+    )

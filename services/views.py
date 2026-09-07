@@ -3,6 +3,7 @@ import binascii
 import re
 import unicodedata
 import uuid
+from datetime import datetime, time, timedelta
 from urllib.parse import quote, urlencode, urljoin, urlparse
 
 from django.conf import settings
@@ -10,7 +11,8 @@ from django.core.files.base import ContentFile
 from django.core import signing
 from django.core.signing import BadSignature, SignatureExpired
 from django.core.mail import EmailMessage
-from django.db.models import Prefetch, Q
+from django.db.models import Count, Prefetch, Q
+from django.db.models.functions import TruncDate
 from django.contrib.auth import get_user_model
 from django.http import HttpResponse
 from django.utils import timezone
@@ -1105,6 +1107,7 @@ class AdminServiceListCreateView(APIView):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
     def patch(self, request):
         service = get_object_or_404(self.get_queryset(request), pk=request.data.get("pk"))
         old_status = service.service_status
@@ -1169,6 +1172,46 @@ class AdminServiceListCreateView(APIView):
 
         service.delete()
         return Response({"message": "Silindi"})
+
+
+class WeeklyScheduledServiceSummaryView(APIView):
+    permission_classes = [IsServiceManager]
+
+    def get(self, request):
+        today = timezone.localdate()
+        week_start = today - timedelta(days=today.weekday())
+        week_end = week_start + timedelta(days=7)
+        current_timezone = timezone.get_current_timezone()
+        start_at = timezone.make_aware(datetime.combine(week_start, time.min), current_timezone)
+        end_at = timezone.make_aware(datetime.combine(week_end, time.min), current_timezone)
+
+        counts = (
+            _service_tenant_queryset(request)
+            .filter(scheduled_date__gte=start_at, scheduled_date__lt=end_at)
+            .annotate(day=TruncDate("scheduled_date", tzinfo=current_timezone))
+            .values("day")
+            .annotate(count=Count("id"))
+            .order_by("day")
+        )
+        count_by_day = {entry["day"]: entry["count"] for entry in counts}
+        labels = ("Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz")
+        days = [
+            {
+                "date": (week_start + timedelta(days=index)).isoformat(),
+                "label": label,
+                "count": count_by_day.get(week_start + timedelta(days=index), 0),
+            }
+            for index, label in enumerate(labels)
+        ]
+
+        return Response(
+            {
+                "week_start": week_start.isoformat(),
+                "week_end": (week_end - timedelta(days=1)).isoformat(),
+                "total": sum(day["count"] for day in days),
+                "days": days,
+            }
+        )
 
 
 

@@ -1,14 +1,16 @@
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 from decimal import Decimal
 from urllib.parse import parse_qs, urlparse
 
 from django.test import RequestFactory, TestCase
+from django.urls import reverse
 from django.utils import timezone
+from rest_framework.test import APIClient
 
 from accounts.models import User
 from customers.models import Customer
 from tenants.models import Tenant
-from technicians.models import Technician
+from technicians.models import Technician, TechnicianPermissions
 from notifications.models import Notification
 
 from .daily_summary import send_daily_service_summaries
@@ -128,6 +130,95 @@ class ServiceSerializerRegressionTests(TestCase):
         self.assertEqual(data["certificate_no"], certificate.certificate_no)
         self.assertEqual(Decimal(str(data["warranty_months"])), Decimal("12"))
         self.assertNotIn("terms_snapshot", data)
+
+
+class WeeklyScheduledServiceSummaryTests(TestCase):
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name="Weekly Tenant", code="weekly-tenant")
+        self.other_tenant = Tenant.objects.create(name="Other Tenant", code="other-weekly-tenant")
+        self.admin = User.objects.create_user(
+            email="weekly-admin@example.com",
+            password="pass123",
+            tenant=self.tenant,
+            user_type="admin",
+        )
+        self.technician_user = User.objects.create_user(
+            email="weekly-tech@example.com",
+            password="pass123",
+            tenant=self.tenant,
+            user_type="technician",
+        )
+        self.technician = Technician.objects.create(
+            user=self.technician_user,
+            tenant=self.tenant,
+        )
+        self.customer = Customer.objects.create(
+            tenant=self.tenant,
+            full_name="Weekly Customer",
+            phone_number="5550001122",
+        )
+        self.other_customer = Customer.objects.create(
+            tenant=self.other_tenant,
+            full_name="Other Customer",
+            phone_number="5550003344",
+        )
+        self.client = APIClient()
+
+    @staticmethod
+    def _at_noon(day):
+        return timezone.make_aware(
+            datetime.combine(day, time(hour=12)),
+            timezone.get_current_timezone(),
+        )
+
+    def _create_service(self, tenant, customer, scheduled_day):
+        return Service.objects.create(
+            tenant=tenant,
+            customer=customer,
+            customer_full_name=customer.full_name,
+            customer_phone=customer.phone_number,
+            scheduled_date=self._at_noon(scheduled_day),
+        )
+
+    def test_returns_current_week_counts_grouped_by_appointment_day_for_tenant(self):
+        today = timezone.localdate()
+        monday = today - timedelta(days=today.weekday())
+        self._create_service(self.tenant, self.customer, monday)
+        self._create_service(self.tenant, self.customer, monday)
+        self._create_service(self.tenant, self.customer, monday + timedelta(days=2))
+        self._create_service(self.tenant, self.customer, monday - timedelta(days=1))
+        self._create_service(self.other_tenant, self.other_customer, monday)
+
+        self.client.force_authenticate(self.admin)
+        response = self.client.get(reverse("weekly-scheduled-service-summary"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["week_start"], monday.isoformat())
+        self.assertEqual(response.data["week_end"], (monday + timedelta(days=6)).isoformat())
+        self.assertEqual(response.data["total"], 3)
+        self.assertEqual([day["label"] for day in response.data["days"]], ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"])
+        self.assertEqual([day["count"] for day in response.data["days"]], [2, 0, 1, 0, 0, 0, 0])
+
+    def test_rejects_technician_without_service_management_permission(self):
+        self.client.force_authenticate(self.technician_user)
+
+        response = self.client.get(reverse("weekly-scheduled-service-summary"))
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_allows_technician_with_service_management_permission(self):
+        TechnicianPermissions.objects.update_or_create(
+            technician=self.technician,
+            defaults={
+                "tenant": self.tenant,
+                "can_manage_services": True,
+            },
+        )
+        self.client.force_authenticate(self.technician_user)
+
+        response = self.client.get(reverse("weekly-scheduled-service-summary"))
+
+        self.assertEqual(response.status_code, 200)
 
 
 class DailyServiceSummaryTests(TestCase):

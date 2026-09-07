@@ -137,13 +137,15 @@ def generate_quote_pdf(quote):
     sent_at = quote.sent_at
     if sent_at and timezone.is_aware(sent_at):
         sent_at = timezone.localtime(sent_at)
-    sent_status = f"Gönderildi - {sent_at.strftime('%d.%m.%Y %H:%M')}" if sent_at else "Henüz gönderilmedi"
+    quote_status = quote.get_status_display()
+    if quote.status == "sent" and sent_at:
+        quote_status = f"{quote_status} - {sent_at.strftime('%d.%m.%Y %H:%M')}"
     valid_until = quote.valid_until.strftime("%d.%m.%Y") if quote.valid_until else "Belirtilmedi"
 
     elements.append(Paragraph("TEKLİF BİLGİLERİ", styles["section"]))
     meta_table = Table([
         [_meta_cell("Teklif Numarası", quote.quote_number, styles), _meta_cell("Teklif Tarihi", created_at.strftime("%d.%m.%Y"), styles)],
-        [_meta_cell("Geçerlilik Tarihi", valid_until, styles), _meta_cell("Gönderim Durumu", sent_status, styles)],
+        [_meta_cell("Geçerlilik Tarihi", valid_until, styles), _meta_cell("Teklif Durumu", quote_status, styles)],
     ], colWidths=[usable_width / 2, usable_width / 2])
     meta_table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), SLATE_50),
