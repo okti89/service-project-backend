@@ -176,10 +176,10 @@ def generate_quote_pdf(quote):
     elements.append(customer_table)
     elements.append(Spacer(1, 7 * mm))
 
-    elements.append(Paragraph("TEKLİF KALEMLERİ", styles["section"]))
+    elements.append(Paragraph("TEKLİF İŞLEMLERİ", styles["section"]))
     rows = [[
         Paragraph("#", styles["table_header"]),
-        Paragraph("Ürün / İşlem", styles["table_header"]),
+        Paragraph("İşlem", styles["table_header"]),
         Paragraph("Açıklama", styles["table_header"]),
         Paragraph("Adet", styles["table_header_right"]),
         Paragraph("Birim Fiyat", styles["table_header_right"]),

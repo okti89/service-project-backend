@@ -130,7 +130,7 @@ class QuoteAPITests(TestCase):
             {
                 "note": "Guncel teklif",
                 "items": [
-                    {"name": "Tek kalem", "quantity": 3, "unit_price": "100.00"}
+                    {"name": "Tek işlem", "quantity": 3, "unit_price": "100.00"}
                 ],
             },
             format="json",

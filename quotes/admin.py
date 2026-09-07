@@ -47,9 +47,9 @@ class QuoteAdmin(TurkishAdminMixin, admin.ModelAdmin):
 
 @admin.register(QuoteItem)
 class QuoteItemAdmin(TurkishAdminMixin, admin.ModelAdmin):
-    admin_verbose_name = "Teklif Kalemi"
-    admin_verbose_name_plural = "Teklif Kalemleri"
-    admin_field_labels = {"quote": "Teklif", "product": "Ürün", "name": "Ad", "description": "Açıklama", "quantity": "Adet", "unit_price": "Birim Fiyat"}
+    admin_verbose_name = "Teklif İşlemi"
+    admin_verbose_name_plural = "Teklif İşlemleri"
+    admin_field_labels = {"quote": "Teklif", "product": "Ürün", "name": "İşlem Adı", "description": "Açıklama", "quantity": "Adet", "unit_price": "Birim Fiyat"}
     list_display = ("quote", "name", "quantity", "unit_price", "line_total")
     search_fields = ("quote__quote_number", "name", "description", "product__name")
     list_filter = ("quote__tenant",)

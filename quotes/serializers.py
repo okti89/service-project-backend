@@ -57,7 +57,7 @@ class QuoteItemSerializer(serializers.ModelSerializer):
                 {"product": "Secilen urun baska bir firmaya ait."}
             )
         if not product and not name:
-            raise serializers.ValidationError({"name": "Kalem adi zorunludur."})
+            raise serializers.ValidationError({"name": "İşlem adı zorunludur."})
         if not product and unit_price is None:
             raise serializers.ValidationError({"unit_price": "Birim fiyat zorunludur."})
         return attrs
@@ -118,7 +118,7 @@ class QuoteSerializer(serializers.ModelSerializer):
 
     def validate_items(self, items):
         if not items:
-            raise serializers.ValidationError("En az bir teklif kalemi eklenmelidir.")
+            raise serializers.ValidationError("En az bir teklif işlemi eklenmelidir.")
         return items
 
     def validate(self, attrs):
