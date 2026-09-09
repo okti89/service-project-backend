@@ -148,6 +148,11 @@ EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
 EMAIL_HOST_USER = config('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
 DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default=EMAIL_HOST_USER)
+PENDING_APPROVAL_REMINDER_EMAIL_ENABLED = config(
+    'PENDING_APPROVAL_REMINDER_EMAIL_ENABLED',
+    default=False,
+    cast=bool,
+)
 
 FEEDBACK_EMAIL = "teknoktay@gmail.com"
 

@@ -220,6 +220,20 @@ class WeeklyScheduledServiceSummaryTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
 
+    def test_allows_staff_user_recognized_as_admin_by_mobile(self):
+        staff_user = User.objects.create_user(
+            email="weekly-staff@example.com",
+            password="pass123",
+            tenant=self.tenant,
+            user_type="technician",
+            is_staff=True,
+        )
+        self.client.force_authenticate(staff_user)
+
+        response = self.client.get(reverse("weekly-scheduled-service-summary"))
+
+        self.assertEqual(response.status_code, 200)
+
 
 class DailyServiceSummaryTests(TestCase):
     def setUp(self):

@@ -1,8 +1,11 @@
-from django.test import TestCase
+from unittest.mock import patch
+
+from django.test import TestCase, override_settings
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
 from accounts.models import User, UserDevice
+from accounts.reminder_services import send_pending_approval_reminders
 from tenants.models import Tenant
 
 
@@ -92,3 +95,36 @@ class AccountDeletionTests(TestCase):
         response = self.client.delete('/api/accounts/auth/delete-account/', {"password": "delete-pass-123", "confirmation": "SİL"}, format="json")
         self.assertEqual(response.status_code, 204)
         self.assertFalse(User.objects.filter(pk=self.user.pk).exists())
+
+
+class PendingApprovalReminderTests(TestCase):
+    @override_settings(PENDING_APPROVAL_REMINDER_EMAIL_ENABLED=False)
+    @patch('accounts.reminder_services.send_admin_pending_approval_reminder_email')
+    @patch('accounts.reminder_services.create_notification')
+    def test_reminder_email_is_disabled_while_in_app_notification_continues(
+        self,
+        create_notification_mock,
+        send_email_mock,
+    ):
+        tenant = Tenant.objects.create(name='Tenant C', code='tenant-c')
+        User.objects.create_user(
+            email='admin@example.com',
+            password='test123',
+            user_type='admin',
+            is_staff=True,
+            approval_status='approved',
+            tenant=tenant,
+        )
+        User.objects.create_user(
+            email='pending@example.com',
+            password='test123',
+            user_type='technician',
+            approval_status='pending',
+            tenant=tenant,
+        )
+
+        sent_count = send_pending_approval_reminders()
+
+        self.assertEqual(sent_count, 1)
+        create_notification_mock.assert_called_once()
+        send_email_mock.assert_not_called()

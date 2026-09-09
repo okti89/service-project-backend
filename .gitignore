@@ -1,4 +1,4 @@
-﻿env/
+env/
 venv/
 .venv/
 __pycache__/
@@ -9,3 +9,4 @@ media/
 staticfiles/
 .env
 *.log
+output/

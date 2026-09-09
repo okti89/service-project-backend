@@ -9,7 +9,11 @@ class IsServiceManager(permissions.BasePermission):
         if not user or not user.is_authenticated:
             return False
 
-        if getattr(user, "user_type", None) == "admin":
+        if (
+            getattr(user, "user_type", None) == "admin"
+            or user.is_staff
+            or user.is_superuser
+        ):
             return True
 
         if getattr(user, "user_type", None) != "technician":

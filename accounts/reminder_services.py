@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from django.conf import settings
 from django.db.models import Q
 from django.utils import timezone
 
@@ -79,16 +80,17 @@ def send_pending_approval_reminders(
                 related_id=str(pending_user.id),
             )
 
-            try:
-                send_admin_pending_approval_reminder_email(
-                    admin_user=admin,
-                    user_full_name=pending_user.get_full_name(),
-                    user_email=pending_user.email,
-                    waiting_label=waiting_label,
-                )
-            except Exception as e:
-                # log önerilir
-                print(f"Email error: {e}")
+            if settings.PENDING_APPROVAL_REMINDER_EMAIL_ENABLED:
+                try:
+                    send_admin_pending_approval_reminder_email(
+                        admin_user=admin,
+                        user_full_name=pending_user.get_full_name(),
+                        user_email=pending_user.email,
+                        waiting_label=waiting_label,
+                    )
+                except Exception as e:
+                    # log önerilir
+                    print(f"Email error: {e}")
 
         pending_user.pending_reminder_sent_at = now
         pending_user.pending_reminder_count = (
