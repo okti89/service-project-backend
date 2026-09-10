@@ -133,6 +133,7 @@ def serialize_service_for_report(service, start_date=None, end_date=None):
         'device_brand': str(service.device_brand) if service.device_brand else None,
         'device_model': str(service.device_model) if service.device_model else None,
         'service_status': service.service_status,
+        'status_name': getattr(getattr(service, 'status', None), 'name', None) or 'Durum belirtilmedi',
         'is_completed': service.service_status == 'completed',
         'scheduled_date': service.scheduled_date,
         'completed_at': service.updated_at if service.service_status == 'completed' else None,

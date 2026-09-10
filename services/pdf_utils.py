@@ -92,6 +92,13 @@ STATUS_LABELS = {
 }
 
 
+def _service_status_label(service):
+    status_name = getattr(getattr(service, 'status', None), 'name', None)
+    if status_name:
+        return status_name
+    return STATUS_LABELS.get(service.service_status, 'Durum belirtilmedi')
+
+
 def _to_float(value):
     try:
         return float(value or 0)
@@ -380,7 +387,7 @@ def generate_service_form_pdf(service):
     elements.append(_info_row('Marka', f': {_device_brand_name(service)}', label_style, value_style, usable_width))
     elements.append(_info_row('Model', f': {_device_model_name(service)}', label_style, value_style, usable_width))
     elements.append(_info_row('Arıza', f': {service.fault_description or "-"}', label_style, value_style, usable_width))
-    elements.append(_info_row('Durum', f': {STATUS_LABELS.get(service.service_status, service.service_status or "-")}', label_style, value_style, usable_width))
+    elements.append(_info_row('Durum', f': {_service_status_label(service)}', label_style, value_style, usable_width))
     elements.append(_info_row('Teknisyen', f': {_technician_name(service)}', label_style, value_style, usable_width))
     elements.append(_divider(usable_width))
 

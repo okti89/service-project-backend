@@ -12,6 +12,7 @@ from customers.models import Customer
 from tenants.models import Tenant
 from technicians.models import Technician, TechnicianPermissions
 from notifications.models import Notification
+from products.models import Product
 
 from .daily_summary import send_daily_service_summaries
 from .operational_alerts import send_operational_alerts
@@ -56,9 +57,39 @@ class ServiceSerializerRegressionTests(TestCase):
         data = PublicServiceSerializer(self.service).data
 
         self.assertEqual(data["receipt_number"], self.service.receipt_number)
-        self.assertIn("status_name", data)
+        self.assertEqual(data["status_name"], "Yeni")
         self.assertNotIn("technician_status", data)
         self.assertNotIn("technician_status_updated_at", data)
+
+    def test_inventory_product_can_be_added_as_service_operation(self):
+        product = Product.objects.create(
+            tenant=self.tenant,
+            name="Sirkülasyon Pompası",
+            price="6500.00",
+            stock_quantity=2,
+        )
+        client = APIClient()
+        client.force_authenticate(self.user)
+
+        response = client.post(
+            "/api/services/service-operations/",
+            {
+                "service": str(self.service.id),
+                "product": str(product.id),
+                "name": product.name,
+                "description": "Pompa değişimi yapıldı",
+                "quantity": 1,
+                "unit_price": 6500,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        operation = ServiceOperations.objects.get(pk=response.data["id"])
+        self.assertEqual(operation.product, product)
+        self.assertEqual(operation.tenant, self.tenant)
+        product.refresh_from_db()
+        self.assertEqual(product.stock_quantity, 1)
 
     def test_whatsapp_status_message_uses_status_and_tracking_link(self):
         request = self.factory.post(

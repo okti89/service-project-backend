@@ -12,8 +12,8 @@ SERVICE_STATUS_META = {
     'assigned': {'label': 'Beklemede', 'color': '#2563EB'},
     'in_progress': {'label': 'Devam Ediyor', 'color': '#F59E0B'},
     'postponed': {'label': 'Ertelendi', 'color': '#7C3AED'},
-    'completed': {'label': 'Tamamlandi', 'color': '#16A34A'},
-    'cancelled': {'label': 'Iptal Edildi', 'color': '#DC2626'},
+    'completed': {'label': 'Tamamlandı', 'color': '#16A34A'},
+    'cancelled': {'label': 'İptal Edildi', 'color': '#DC2626'},
 }
 
 
@@ -92,6 +92,13 @@ class ServiceOperationsSerializer(serializers.ModelSerializer):
         tenant = getattr(getattr(request, 'user', None), 'tenant', None)
         if value and getattr(getattr(value, 'customer', None), 'tenant', None) != tenant:
             raise serializers.ValidationError('Bu servis baska bir tenant kaydina ait.')
+        return value
+
+    def validate_product(self, value):
+        request = self.context.get('request')
+        tenant = getattr(getattr(request, 'user', None), 'tenant', None)
+        if value and getattr(value, 'tenant', None) != tenant:
+            raise serializers.ValidationError('Bu ürün başka bir firmaya ait.')
         return value
 
 class ServicePaymentSerializer(serializers.ModelSerializer):
