@@ -91,6 +91,82 @@ class ServiceSerializerRegressionTests(TestCase):
         product.refresh_from_db()
         self.assertEqual(product.stock_quantity, 1)
 
+    def test_only_admin_can_delete_service(self):
+        client = APIClient()
+        client.force_authenticate(self.user)
+
+        response = client.delete(f"/api/services/admin-services/{self.service.id}/")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(Service.objects.filter(pk=self.service.id).exists())
+
+    def test_admin_delete_restores_used_product_stock(self):
+        admin = User.objects.create_user(
+            email="admin-delete@example.com",
+            password="pass123",
+            tenant=self.tenant,
+            user_type="admin",
+        )
+        product = Product.objects.create(
+            tenant=self.tenant,
+            name="Silinecek Servis Ürünü",
+            price="100.00",
+            stock_quantity=2,
+        )
+        ServiceOperations.objects.create(
+            tenant=self.tenant,
+            service=self.service,
+            product=product,
+            name=product.name,
+            quantity=1,
+            unit_price=product.price,
+        )
+        product.refresh_from_db()
+        self.assertEqual(product.stock_quantity, 1)
+
+        client = APIClient()
+        client.force_authenticate(admin)
+        response = client.delete(f"/api/services/admin-services/{self.service.id}/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(Service.objects.filter(pk=self.service.id).exists())
+        product.refresh_from_db()
+        self.assertEqual(product.stock_quantity, 2)
+
+    def test_deleting_cancelled_service_does_not_restore_stock_twice(self):
+        admin = User.objects.create_user(
+            email="admin-cancelled-delete@example.com",
+            password="pass123",
+            tenant=self.tenant,
+            user_type="admin",
+        )
+        product = Product.objects.create(
+            tenant=self.tenant,
+            name="İptal Edilen Servis Ürünü",
+            price="100.00",
+            stock_quantity=2,
+        )
+        ServiceOperations.objects.create(
+            tenant=self.tenant,
+            service=self.service,
+            product=product,
+            name=product.name,
+            quantity=1,
+            unit_price=product.price,
+        )
+        self.service.service_status = "cancelled"
+        self.service.save()
+        product.refresh_from_db()
+        self.assertEqual(product.stock_quantity, 2)
+
+        client = APIClient()
+        client.force_authenticate(admin)
+        response = client.delete(f"/api/services/admin-services/{self.service.id}/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        product.refresh_from_db()
+        self.assertEqual(product.stock_quantity, 2)
+
     def test_whatsapp_status_message_uses_status_and_tracking_link(self):
         request = self.factory.post(
             "/api/services/admin-services/",

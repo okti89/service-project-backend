@@ -11,6 +11,7 @@ from django.core.files.base import ContentFile
 from django.core import signing
 from django.core.signing import BadSignature, SignatureExpired
 from django.core.mail import EmailMessage
+from django.db import transaction
 from django.db.models import Count, Prefetch, Q
 from django.db.models.functions import TruncDate
 from django.contrib.auth import get_user_model
@@ -70,6 +71,26 @@ class SerializerAPIView(APIView):
         if not self.serializer_class:
             raise ValueError("serializer_class tanımlı değil.")
         return self.serializer_class(*args, **kwargs)
+
+
+def _is_admin_user(user):
+    return bool(
+        user
+        and user.is_authenticated
+        and (user.is_superuser or user.is_staff or getattr(user, 'user_type', None) == 'admin')
+    )
+
+
+def _delete_service(service):
+    with transaction.atomic():
+        for payment in list(service.payments.select_related('payment_method')):
+            payment.delete()
+
+        if service.service_status != 'cancelled':
+            for operation in list(service.items.select_related('product')):
+                operation.delete()
+
+        service.delete()
 
 
 def _request_tenant(request):
@@ -1165,13 +1186,11 @@ class AdminServiceListCreateView(APIView):
     def delete(self, request):
         service = get_object_or_404(self.get_queryset(request), pk=request.data.get("pk"))
 
-        # 🔐 yetki kontrolü
-        user = request.user
-        if not (user.is_superuser or user.user_type == "admin"):
-            return Response({"error": "Silme yetkiniz yok"}, status=403)
+        if not _is_admin_user(request.user):
+            return Response({"detail": "Servis silme işlemini yalnızca yöneticiler yapabilir."}, status=status.HTTP_403_FORBIDDEN)
 
-        service.delete()
-        return Response({"message": "Silindi"})
+        _delete_service(service)
+        return Response({"message": "Servis başarıyla silindi"}, status=status.HTTP_200_OK)
 
 
 class WeeklyScheduledServiceSummaryView(APIView):
@@ -1279,7 +1298,11 @@ class AdminServiceRetrieveUpdateDestroyView(APIView):
     
     def delete(self, request, pk):
         service = get_object_or_404(self.get_queryset(request), pk=pk)
-        service.delete()
+
+        if not _is_admin_user(request.user):
+            return Response({"detail": "Servis silme işlemini yalnızca yöneticiler yapabilir."}, status=status.HTTP_403_FORBIDDEN)
+
+        _delete_service(service)
         return Response({"message": "Servis başarıyla silindi"}, status=status.HTTP_200_OK)
     
 class ServiceFormPDFView(APIView):
