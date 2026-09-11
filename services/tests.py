@@ -18,7 +18,7 @@ from .daily_summary import send_daily_service_summaries
 from .operational_alerts import send_operational_alerts
 
 from .models import Service, ServiceOperations, ServicePayment, WarrantyCertificate
-from .serializers import PublicServiceSerializer, WarrantyCertificateSerializer
+from .serializers import PublicServiceSerializer, ServiceSerializer, WarrantyCertificateSerializer
 from .views import (
     _build_public_service_tracking_url,
     _build_service_pdf_filename,
@@ -52,6 +52,58 @@ class ServiceSerializerRegressionTests(TestCase):
             technician=self.technician,
             scheduled_date=timezone.now() + timedelta(days=1),
         )
+
+    def create_service_from_customer_fields(self, **overrides):
+        request = self.factory.post('/api/services/admin-services/')
+        request.user = self.user
+        payload = {
+            'customer_full_name': 'Yeni Müşteri',
+            'customer_phone': '+90 555 987 65 43',
+            'customer_address': 'Yeni müşteri adresi',
+            'scheduled_date': timezone.now() + timedelta(days=2),
+        }
+        payload.update(overrides)
+        serializer = ServiceSerializer(data=payload, context={'request': request})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        return serializer.save(tenant=self.tenant)
+
+    def test_create_service_automatically_creates_and_links_customer(self):
+        service = self.create_service_from_customer_fields()
+
+        customer = Customer.objects.get(
+            tenant=self.tenant,
+            phone_number='05559876543',
+        )
+        self.assertEqual(service.customer, customer)
+        self.assertEqual(customer.full_name, 'Yeni Müşteri')
+        self.assertEqual(customer.address, 'Yeni müşteri adresi')
+        self.assertEqual(service.customer_phone, '05559876543')
+
+    def test_create_service_links_existing_customer_with_same_phone(self):
+        customer_count = Customer.objects.filter(tenant=self.tenant).count()
+
+        service = self.create_service_from_customer_fields(
+            customer_full_name='Formdaki İsim',
+            customer_phone='+90 555 111 22 33',
+            customer_address='Formdaki yeni adres',
+        )
+
+        self.assertEqual(service.customer, self.customer)
+        self.assertEqual(Customer.objects.filter(tenant=self.tenant).count(), customer_count)
+        self.assertEqual(service.customer_full_name, 'Formdaki İsim')
+        self.assertEqual(service.customer_address, 'Formdaki yeni adres')
+
+    def test_create_service_reactivates_matching_deleted_customer(self):
+        self.customer.is_deleted = True
+        self.customer.save(update_fields=['is_deleted', 'updated_at'])
+
+        service = self.create_service_from_customer_fields(
+            customer_phone='0555 111 22 33',
+        )
+
+        self.customer.refresh_from_db()
+        self.assertEqual(service.customer, self.customer)
+        self.assertFalse(self.customer.is_deleted)
 
     def test_public_service_serializer_uses_existing_fields_only(self):
         data = PublicServiceSerializer(self.service).data

@@ -1,6 +1,9 @@
 ﻿from rest_framework import serializers
 from decimal import Decimal
+from django.db import transaction
 from django.db.models import Q, Sum
+from customers.models import Customer
+from customers.serializers import CustomerSerializer
 from .models import (
     DeviceType, Brand, Model, Service, ServiceStatus,
     ServiceOperations, ServiceSignature, PaymentMethod, ServicePayment, 
@@ -371,8 +374,38 @@ class ServiceSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('Gecersiz servis durumu.')
         return value
 
+    @transaction.atomic
     def create(self, validated_data):
         status_code = validated_data.pop('service_status', None)
+        customer = validated_data.get('customer')
+        tenant = validated_data.get('tenant')
+
+        if not customer and tenant:
+            full_name = str(validated_data.get('customer_full_name') or '').strip()
+            phone = CustomerSerializer.normalize_phone(validated_data.get('customer_phone'))
+            address = str(validated_data.get('customer_address') or '').strip()
+
+            if full_name and phone:
+                customer = Customer.objects.filter(
+                    tenant=tenant,
+                    phone_number=phone,
+                ).first()
+
+                if customer:
+                    if customer.is_deleted:
+                        customer.is_deleted = False
+                        customer.save(update_fields=['is_deleted', 'updated_at'])
+                else:
+                    customer = Customer.objects.create(
+                        tenant=tenant,
+                        full_name=full_name,
+                        phone_number=phone,
+                        address=address or None,
+                    )
+
+                validated_data['customer'] = customer
+                validated_data['customer_phone'] = phone
+
         instance = Service(**validated_data)
         if status_code:
             instance.service_status = status_code
