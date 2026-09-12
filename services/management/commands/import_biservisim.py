@@ -8,7 +8,10 @@ from datetime import date, datetime, time
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+from django.contrib.auth.hashers import identify_hasher
+from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
+from django.core.validators import validate_email
 from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
@@ -150,6 +153,14 @@ class Command(BaseCommand):
         parser.add_argument('source', type=str)
         parser.add_argument('--tenant-code', default='uygar-mekanik')
         parser.add_argument('--tenant-name', default='Uygar Mekanik')
+        parser.add_argument(
+            '--expected-tenant-id',
+            help='Mevcut tenant UUID degerini dogrular; farkliysa aktarimi durdurur.',
+        )
+        parser.add_argument(
+            '--technician-map',
+            help='Eski teknisyenleri canli kullanicilarla eslestiren JSON dosyasi.',
+        )
         parser.add_argument('--admin-email')
         parser.add_argument('--admin-password')
         parser.add_argument(
@@ -163,8 +174,8 @@ class Command(BaseCommand):
         if not source.is_file():
             raise CommandError(f'Kaynak dosya bulunamadi: {source}')
 
-        if options['commit'] and (not options['admin_email'] or not options['admin_password']):
-            raise CommandError('--commit icin --admin-email ve --admin-password zorunludur.')
+        if bool(options['admin_email']) != bool(options['admin_password']):
+            raise CommandError('--admin-email ve --admin-password birlikte verilmelidir.')
 
         try:
             payload = json.loads(source.read_text(encoding='utf-8-sig'))
@@ -186,6 +197,10 @@ class Command(BaseCommand):
         self.tables = tables
         self.stats = defaultdict(int)
         self.warnings = defaultdict(int)
+        self.expected_tenant_id = clean_text(options.get('expected_tenant_id'))
+        self.technician_map = self._load_technician_map(options.get('technician_map'))
+        if options['commit'] and self.technician_map is None:
+            raise CommandError('Gercek aktarim icin --technician-map zorunludur.')
 
         mode = 'GERCEK AKTARIM' if options['commit'] else 'DRY-RUN'
         self.stdout.write(self.style.MIGRATE_HEADING(f'{mode}: {source.name}'))
@@ -198,17 +213,27 @@ class Command(BaseCommand):
         self._print_report(options['commit'])
 
     def _run_import(self, options):
-        self.tenant, created = Tenant.objects.update_or_create(
-            code=self.tenant_code,
-            defaults={
-                'name': self.tenant_name,
-                'app_name': 'Uygar Servis Yönetimi',
-                'is_active': True,
-            },
-        )
+        self.tenant = Tenant.objects.filter(code=self.tenant_code).first()
+        created = self.tenant is None
+        if created:
+            if self.expected_tenant_id:
+                raise CommandError(
+                    f'Beklenen tenant bulunamadi: {self.tenant_code} ({self.expected_tenant_id})'
+                )
+            self.tenant = Tenant.objects.create(
+                code=self.tenant_code,
+                name=self.tenant_name,
+                app_name='Uygar Servis Yönetimi',
+                is_active=True,
+            )
+        elif self.expected_tenant_id and str(self.tenant.id) != self.expected_tenant_id:
+            raise CommandError(
+                f'Tenant UUID uyusmuyor. Beklenen: {self.expected_tenant_id}, '
+                f'bulunan: {self.tenant.id}'
+            )
         self.stats['tenant_created'] = int(created)
 
-        self.company, _ = CompanyConfig.objects.update_or_create(
+        self.company, _ = CompanyConfig.objects.get_or_create(
             tenant=self.tenant,
             defaults={'name': self.tenant_name},
         )
@@ -223,6 +248,75 @@ class Command(BaseCommand):
         self._import_services()
         self._import_operations()
         self._import_finance()
+
+    def _load_technician_map(self, source_path):
+        if not source_path:
+            return None
+
+        source = Path(source_path).expanduser().resolve()
+        if not source.is_file():
+            raise CommandError(f'Teknisyen eslestirme dosyasi bulunamadi: {source}')
+        try:
+            payload = json.loads(source.read_text(encoding='utf-8-sig'))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise CommandError(f'Teknisyen eslestirme JSON dosyasi okunamadi: {exc}') from exc
+
+        map_tenant_code = clean_text(payload.get('tenant_code'), 64).lower()
+        if map_tenant_code and map_tenant_code != self.tenant_code:
+            raise CommandError(
+                f'Teknisyen eslestirme dosyasi {map_tenant_code} tenantina ait; '
+                f'hedef tenant {self.tenant_code}.'
+            )
+        map_tenant_id = clean_text(payload.get('expected_tenant_id'))
+        if map_tenant_id:
+            if self.expected_tenant_id and self.expected_tenant_id != map_tenant_id:
+                raise CommandError('Komut ve teknisyen eslestirme dosyasindaki tenant UUID farkli.')
+            self.expected_tenant_id = map_tenant_id
+
+        result = {}
+        used_targets = set()
+        for entry in payload.get('technicians') or []:
+            legacy_name = clean_text(entry.get('legacy_name'), 300)
+            key = normalized_key(legacy_name)
+            if not key:
+                raise CommandError('Teknisyen eslestirmesinde legacy_name zorunludur.')
+            if key in result:
+                raise CommandError(f'Tekrarlanan teknisyen eslestirmesi: {legacy_name}')
+
+            mode = clean_text(entry.get('mode')).lower()
+            if mode not in {'existing', 'create'}:
+                raise CommandError(f'Gecersiz teknisyen eslestirme modu: {legacy_name}')
+            email = clean_text(entry.get('email'), 254).lower()
+            user_id = clean_text(entry.get('user_id'))
+            password_hash = clean_text(entry.get('password_hash'))
+            if not email:
+                raise CommandError(f'Teknisyen e-postasi eksik: {legacy_name}')
+            try:
+                validate_email(email)
+            except ValidationError as exc:
+                raise CommandError(f'Gecersiz teknisyen e-postasi: {legacy_name}') from exc
+            if mode == 'existing' and not user_id:
+                raise CommandError(f'Mevcut kullanici UUID eksik: {legacy_name}')
+            if mode == 'create' and not password_hash:
+                raise CommandError(f'Yeni kullanici parola hash degeri eksik: {legacy_name}')
+            if password_hash:
+                try:
+                    identify_hasher(password_hash)
+                except ValueError as exc:
+                    raise CommandError(f'Gecersiz parola hash degeri: {legacy_name}') from exc
+
+            target = user_id or email
+            if target in used_targets:
+                raise CommandError(f'Ayni kullanici birden fazla teknisyene baglanamaz: {target}')
+            used_targets.add(target)
+            result[key] = {
+                'legacy_name': legacy_name,
+                'mode': mode,
+                'email': email,
+                'user_id': user_id,
+                'password_hash': password_hash,
+            }
+        return result
 
     def _money(self, value, limit=Decimal('99999999.99')):
         amount = parse_decimal(value)
@@ -248,24 +342,25 @@ class Command(BaseCommand):
         if existing and existing.tenant_id != self.tenant.id:
             raise CommandError('Yonetici e-postasi baska bir tenant tarafindan kullaniliyor.')
 
+        if existing:
+            self.stats['admin_preserved'] += 1
+            return existing
+
         admin_id = legacy_uuid(self.tenant_code, 'admin', email)
-        admin, created = User.objects.update_or_create(
-            pk=existing.pk if existing else admin_id,
-            defaults={
-                'tenant': self.tenant,
-                'email': email,
-                'first_name': 'Uygar',
-                'last_name': 'Yönetici',
-                'user_type': 'admin',
-                'approval_status': 'approved',
-                'is_active': True,
-                'is_staff': True,
-            },
+        admin = User(
+            pk=admin_id,
+            tenant=self.tenant,
+            email=email,
+            first_name='Uygar',
+            last_name='Yönetici',
+            user_type='admin',
+            approval_status='approved',
+            is_active=True,
+            is_staff=True,
         )
-        if password:
-            admin.set_password(password)
-            admin.save(update_fields=['password'])
-        self.stats['admin_created'] = int(created)
+        admin.set_password(password)
+        admin.save()
+        self.stats['admin_created'] += 1
 
     def _import_named_definitions(self):
         device_names = [row.get('cihaztipi') for row in self.tables.get('cihaztipleri', [])]
@@ -307,37 +402,100 @@ class Command(BaseCommand):
             if clean_text(row.get('teknisyenadi'))
         )
 
+        if self.technician_map is not None:
+            missing = sorted(
+                name for name in names
+                if normalized_key(name) not in self.technician_map
+            )
+            if missing:
+                raise CommandError(
+                    'Teknisyen eslestirmesi eksik: ' + ', '.join(missing)
+                )
+
         self.technicians = {}
         for name in sorted(names, key=normalized_key):
             key = normalized_key(name)
             if not key:
                 continue
-            digest = hashlib.sha1(name.encode('utf-8')).hexdigest()[:12]
-            email = f'legacy-tech-{digest}@uygar.invalid'
             first_name, last_name = split_name(name)
-            user, created = User.objects.update_or_create(
-                pk=legacy_uuid(self.tenant_code, 'technician-user', key),
-                defaults={
-                    'tenant': self.tenant,
-                    'email': email,
-                    'first_name': first_name,
-                    'last_name': last_name,
-                    'user_type': 'technician',
-                    'approval_status': 'approved',
-                    'is_active': False,
-                    'is_staff': False,
-                },
-            )
-            if created:
-                user.set_unusable_password()
-                user.save(update_fields=['password'])
-            technician, _ = Technician.objects.update_or_create(
-                user=user,
-                defaults={'tenant': self.tenant, 'hire_date': date.today(), 'is_online': False},
-            )
+            if self.technician_map is None:
+                digest = hashlib.sha1(name.encode('utf-8')).hexdigest()[:12]
+                entry = {
+                    'mode': 'create',
+                    'email': f'legacy-tech-{digest}@uygar.invalid',
+                    'user_id': '',
+                    'password_hash': '',
+                }
+            else:
+                entry = self.technician_map[key]
+
+            user = self._resolve_technician_user(entry, key, first_name, last_name)
+            technician = Technician.objects.filter(user=user).first()
+            if technician and technician.tenant_id != self.tenant.id:
+                raise CommandError(
+                    f'Teknisyen profili baska tenant kaydina ait: {entry["email"]}'
+                )
+            if not technician:
+                technician = Technician.objects.create(
+                    id=legacy_uuid(self.tenant_code, 'technician-profile', key),
+                    user=user,
+                    tenant=self.tenant,
+                    hire_date=date.today(),
+                    is_online=False,
+                )
+                self.stats['technician_profiles_created'] += 1
+            else:
+                self.stats['technician_profiles_preserved'] += 1
             self.technicians[key] = technician
 
         self.stats['legacy_technicians'] = len(self.technicians)
+
+    def _resolve_technician_user(self, entry, key, first_name, last_name):
+        email = entry['email']
+        if entry['mode'] == 'existing':
+            user = User.objects.filter(pk=entry['user_id']).first()
+            if not user:
+                raise CommandError(f'Mevcut kullanici bulunamadi: {email}')
+            if user.email.lower() != email:
+                raise CommandError(
+                    f'Kullanici UUID ve e-posta uyusmuyor: {entry["user_id"]} / {email}'
+                )
+            if user.tenant_id != self.tenant.id:
+                raise CommandError(f'Kullanici baska tenant kaydina ait: {email}')
+            self.stats['technician_users_preserved'] += 1
+            return user
+
+        user = User.objects.filter(email__iexact=email).first()
+        if user:
+            if user.tenant_id != self.tenant.id:
+                raise CommandError(f'Kullanici e-postasi baska tenantta kayitli: {email}')
+            self.stats['technician_users_preserved'] += 1
+            return user
+
+        user_id = legacy_uuid(self.tenant_code, 'technician-user', key)
+        conflicting_user = User.objects.filter(pk=user_id).first()
+        if conflicting_user:
+            raise CommandError(
+                f'Teknisyen UUID baska kullaniciyla cakisti: {conflicting_user.email}'
+            )
+
+        user = User(
+            id=user_id,
+            tenant=self.tenant,
+            email=email,
+            first_name=first_name,
+            last_name=last_name,
+            user_type='technician',
+            approval_status='approved',
+            is_active=bool(entry['password_hash']),
+            is_staff=False,
+            password=entry['password_hash'],
+        )
+        if not entry['password_hash']:
+            user.set_unusable_password()
+        user.save()
+        self.stats['technician_users_created'] += 1
+        return user
 
     def _customer_address(self, row):
         direct = clean_text(row.get('musteri_adresi') or row.get('acikadres'))
