@@ -73,24 +73,21 @@ or with an open shift are skipped.
 
 ## Operational alerts
 
-Create a scheduled task for service status update reminders, starting at 08:00:
+Create one scheduled task for all operational alerts, starting at 08:00:
 
 `*/30 8-20 * * *`
 
 Command:
 
-`python manage.py send_operational_alerts --only-status-reminders`
+`python manage.py send_operational_alerts --not-before 08:00`
 
-Create one scheduled task for assignment, manager overdue, and receivable alerts.
-It checks every 30 minutes, but sends the first alerts at 08:30:
+Remove the older `--only-status-reminders` and `--exclude-status-reminders` tasks
+after enabling this combined task. Database-level deduplication prevents duplicate
+records if two runs overlap.
 
-`*/30 8-20 * * *`
-
-Command:
-
-`python manage.py send_operational_alerts --exclude-status-reminders --not-before 08:30`
-
-Each recipient receives at most one alert of each type per service per day.
+Technicians receive the scheduled and overdue reminders only once per service.
+Managers receive one tenant-scoped overdue summary per day instead of one alert
+for every overdue service.
 
 ## Shift end reminder
 

@@ -5,7 +5,7 @@ from rest_framework.test import APIRequestFactory
 
 from accounts.models import User, UserDevice
 from notifications.models import Notification
-from notifications.services import create_notification
+from notifications.services import create_notification, create_notification_once
 from notifications.utils import send_bulk_expo_push_notification
 from notifications.views import AdminSendNotificationView, NotificationView
 from tenants.models import Tenant
@@ -62,6 +62,33 @@ class NotificationBehaviorTests(TestCase):
         )
 
         self.assertEqual(notification.user, self.user)
+        mock_push.assert_called_once()
+
+    @patch("notifications.services.send_expo_push_notification")
+    def test_create_notification_once_prevents_duplicate_record_and_push(self, mock_push):
+        UserDevice.objects.create(
+            tenant=self.tenant,
+            user=self.user,
+            expo_token="ExponentPushToken[test-token]",
+        )
+
+        first, first_created = create_notification_once(
+            user=self.user,
+            title="Reminder",
+            message="First message",
+            dedupe_key="service:test:once",
+        )
+        second, second_created = create_notification_once(
+            user=self.user,
+            title="Reminder",
+            message="Second message",
+            dedupe_key="service:test:once",
+        )
+
+        self.assertTrue(first_created)
+        self.assertFalse(second_created)
+        self.assertEqual(first.pk, second.pk)
+        self.assertEqual(Notification.objects.filter(user=self.user).count(), 1)
         mock_push.assert_called_once()
 
     @patch("notifications.views.send_mass_mail")

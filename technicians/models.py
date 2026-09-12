@@ -140,7 +140,7 @@ class TechnicianAttendance(models.Model):
 
     class Meta:
         verbose_name = "Teknisyen Devam Durumu"
-        verbose_name_plural = "Teknisyen Devam Durumlari"
+        verbose_name_plural = "Teknisyen Devam Durumları"
         ordering = ["-date", "-created_at"]
         unique_together = ("technician", "date")
         indexes = [
@@ -203,8 +203,8 @@ class LocationLog(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name = "Konum Takip Logu"
-        verbose_name_plural = "Konum Takip Loglari"
+        verbose_name = "Konum Takip Kaydı"
+        verbose_name_plural = "Konum Takip Kayıtları"
         ordering = ["-arrived_at"]
         indexes = [
             models.Index(fields=["user", "arrived_at"]),

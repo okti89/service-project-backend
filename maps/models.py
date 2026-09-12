@@ -153,8 +153,8 @@ class MapCache(models.Model):
     class Meta:
         unique_together = ("tenant", "cache_key")
         indexes = [models.Index(fields=["tenant", "cache_key"])]
-        verbose_name = "Harita Cache"
-        verbose_name_plural = "Harita Cache'leri"
+        verbose_name = "Harita Önbelleği"
+        verbose_name_plural = "Harita Önbellekleri"
 
     def is_expired(self) -> bool:
         return timezone.now() > self.created_at + timedelta(days=self.ttl_days)

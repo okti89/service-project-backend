@@ -21,6 +21,7 @@ class Notification(models.Model):
 
     related_id = models.CharField(max_length=255, blank=True, null=True)
     related_screen = models.CharField(max_length=255, blank=True, null=True)
+    dedupe_key = models.CharField(max_length=255, blank=True, null=True)
 
     is_read = models.BooleanField(default=False)
     read_at = models.DateTimeField(null=True, blank=True)
@@ -33,6 +34,12 @@ class Notification(models.Model):
             models.Index(fields=['tenant', 'created_at']),
             models.Index(fields=['tenant', 'is_read']),
             models.Index(fields=['user', 'is_read']),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'dedupe_key'],
+                name='uniq_notification_user_dedupe_key',
+            ),
         ]
 
     def mark_as_read(self):

@@ -356,6 +356,18 @@ def _service_notification_context(service):
     )
 
 
+def _create_service_notification(service, user, title, message):
+    if not user or not service.tenant_id or getattr(user, 'tenant_id', None) != service.tenant_id:
+        return None
+    return create_notification(
+        user=user,
+        title=title,
+        message=message,
+        related_id=str(service.id),
+        related_screen='service_detail',
+    )
+
+
 def _notify_technician_assignment(service, old_technician_id=None):
     technician = getattr(service, 'technician', None)
     technician_user = getattr(technician, 'user', None)
@@ -365,7 +377,10 @@ def _notify_technician_assignment(service, old_technician_id=None):
 
     old_technician_user = None
     if old_technician_id:
-        old_technician = Technician.objects.select_related('user').filter(pk=old_technician_id).first()
+        old_technician = Technician.objects.select_related('user').filter(
+            pk=old_technician_id,
+            tenant_id=service.tenant_id,
+        ).first()
         old_technician_user = getattr(old_technician, 'user', None)
 
     customer_name = service.customer_full_name or 'Müşteri'
@@ -378,12 +393,11 @@ def _notify_technician_assignment(service, old_technician_id=None):
         else:
             title = 'Yeni servis ataması'
             message = f"{customer_name} adlı müşteriye ait yeni servis size atandı.\n{context}"
-        create_notification(
+        _create_service_notification(
+            service=service,
             user=technician_user,
             title=title,
             message=message,
-            related_id=str(service.id),
-            related_screen='service_detail',
         )
 
     if old_technician_user and (not technician_user or old_technician_user.id != technician_user.id):
@@ -391,12 +405,11 @@ def _notify_technician_assignment(service, old_technician_id=None):
             message = f"{customer_name} adlı müşteriye ait servis görevi başka bir teknisyene devredildi.\n{context}"
         else:
             message = f"{customer_name} adlı müşteriye ait servis görevi atama listenizden kaldırıldı.\n{context}"
-        create_notification(
+        _create_service_notification(
+            service=service,
             user=old_technician_user,
             title='Servis görevinde güncelleme',
             message=message,
-            related_id=str(service.id),
-            related_screen='service_detail',
         )
 
 
@@ -413,15 +426,14 @@ def _notify_technician_schedule_change(service, actor_user, old_scheduled_date, 
     customer_name = service.customer_full_name or 'Müşteri'
     address = str(service.customer_address or '').strip() or 'Adres bilgisi bulunmuyor'
     appointment = _format_service_schedule_label(service.scheduled_date)
-    create_notification(
+    _create_service_notification(
+        service=service,
         user=technician_user,
         title='Randevunuz Güncellendi',
         message=(
             f"{customer_name} adlı müşteriye ait servis randevusu güncellendi.\n"
             f"Müşteri: {customer_name}\nAdres: {address}\nRandevu: {appointment}"
         ),
-        related_id=str(service.id),
-        related_screen='service_detail',
     )
 
 
@@ -440,36 +452,35 @@ def _notify_status_change_by_actor(service, actor_user, old_status):
     if actor_is_admin_like:
         technician_user = getattr(getattr(service, 'technician', None), 'user', None)
         if technician_user and technician_user.id != actor_user.id:
-            create_notification(
+            _create_service_notification(
+                service=service,
                 user=technician_user,
                 title='Servis durumu güncellendi',
                 message=(
                     f"{customer_name} adlı müşteriye ait servisin durumu "
                     f"{old_label} -> {new_label} olarak güncellendi.\n{context}"
                 ),
-                related_id=str(service.id),
-                related_screen='service_detail',
             )
         return
 
     if actor_is_technician:
         user_model = get_user_model()
         admin_users = user_model.objects.filter(
-            is_active=True
+            is_active=True,
+            tenant_id=service.tenant_id,
         ).filter(
             Q(user_type='admin') | Q(is_staff=True)
         ).exclude(pk=actor_user.pk)
 
         for admin_user in admin_users:
-            create_notification(
+            _create_service_notification(
+                service=service,
                 user=admin_user,
                 title='Teknisyen servis durumu güncelledi',
                 message=(
                     f"{actor_user.get_full_name()} adlı teknisyen, {customer_name} adlı müşteriye ait "
                     f"servisin durumunu {old_label} -> {new_label} olarak güncelledi.\n{context}"
                 ),
-                related_id=str(service.id),
-                related_screen='service_detail',
             )
 
 
@@ -708,7 +719,7 @@ class ServicePaymentListCreateView(SerializerAPIView):
 
     def get(self, request):
         serializer = self.get_serializer(
-            ServicePayment.objects.filter(service__customer__tenant=_request_tenant(request)),
+            ServicePayment.objects.filter(service__tenant=_request_tenant(request)),
             many=True,
         )
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -722,7 +733,7 @@ class ServicePaymentListCreateView(SerializerAPIView):
         try:
             service_payment = ServicePayment.objects.get(
                 pk=request.data["pk"],
-                service__customer__tenant=_request_tenant(request),
+                service__tenant=_request_tenant(request),
             )
         except ServicePayment.DoesNotExist:
             return Response({"error": "Ödeme bulunamadı"}, status=status.HTTP_404_NOT_FOUND)
@@ -735,7 +746,7 @@ class ServicePaymentListCreateView(SerializerAPIView):
         try:
             service_payment = ServicePayment.objects.get(
                 pk=request.data["pk"],
-                service__customer__tenant=_request_tenant(request),
+                service__tenant=_request_tenant(request),
             )
         except ServicePayment.DoesNotExist:
             return Response({"error": "Ödeme bulunamadı"}, status=status.HTTP_404_NOT_FOUND)
@@ -754,7 +765,7 @@ class ServicePaymentRefundView(APIView):
         try:
             service_payment = ServicePayment.objects.get(
                 pk=payment_id,
-                service__customer__tenant=_request_tenant(request),
+                service__tenant=_request_tenant(request),
             )
         except ServicePayment.DoesNotExist:
             return Response({"error": "Odeme bulunamadi"}, status=status.HTTP_404_NOT_FOUND)
@@ -1099,11 +1110,16 @@ class AdminServiceListCreateView(APIView):
         if customer_id:
             qs = qs.filter(customer_id=customer_id)
 
-        # 📅 Tarih aralığı filtresi (mobil ay bazlı fetch için)
-        start_date = request.query_params.get('start_date')
-        end_date = request.query_params.get('end_date')
-        if start_date and end_date:
-            qs = qs.filter(scheduled_date__date__range=[start_date, end_date])
+        overdue_only = str(request.query_params.get('overdue', '')).lower() in {'1', 'true', 'yes'}
+        if overdue_only:
+            qs = qs.filter(scheduled_date__lt=timezone.now()).exclude(
+                status__code__in=['cancelled', 'completed'],
+            )
+        else:
+            start_date = request.query_params.get('start_date')
+            end_date = request.query_params.get('end_date')
+            if start_date and end_date:
+                qs = qs.filter(scheduled_date__date__range=[start_date, end_date])
 
         return qs.order_by("-scheduled_date")
 

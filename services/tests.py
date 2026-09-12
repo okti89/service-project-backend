@@ -17,7 +17,9 @@ from products.models import Product
 from .daily_summary import send_daily_service_summaries
 from .operational_alerts import send_operational_alerts
 
-from .models import Service, ServiceOperations, ServicePayment, WarrantyCertificate
+from accounting.models import Transaction
+
+from .models import PaymentMethod, Service, ServiceOperations, ServicePayment, WarrantyCertificate
 from .serializers import PublicServiceSerializer, ServiceSerializer, WarrantyCertificateSerializer
 from .views import (
     _build_public_service_tracking_url,
@@ -142,6 +144,153 @@ class ServiceSerializerRegressionTests(TestCase):
         self.assertEqual(operation.tenant, self.tenant)
         product.refresh_from_db()
         self.assertEqual(product.stock_quantity, 1)
+
+    def test_payment_uses_service_tenant_when_customer_is_missing(self):
+        self.service.customer = None
+        self.service.save(update_fields=['customer'])
+        ServiceOperations.objects.create(
+            tenant=self.tenant,
+            service=self.service,
+            name='Bakim',
+            quantity=1,
+            unit_price=Decimal('100.00'),
+        )
+        payment_method = PaymentMethod.objects.create(tenant=self.tenant, name='Nakit')
+        client = APIClient()
+        client.force_authenticate(self.user)
+
+        response = client.post(
+            '/api/services/service-payments/',
+            {
+                'service': str(self.service.id),
+                'payment_method': payment_method.pk,
+                'amount': '100.00',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        payment = ServicePayment.objects.get(pk=response.data['id'])
+        self.assertEqual(payment.tenant, self.tenant)
+        income = Transaction.objects.get(
+            receipt_number=Transaction.normalize_receipt_number(payment._transaction_receipt_ref()),
+            transaction_type='income',
+        )
+        self.assertEqual(income.tenant, self.tenant)
+        self.assertEqual(income.account.tenant, self.tenant)
+
+        list_response = client.get('/api/services/service-payments/')
+        self.assertEqual(list_response.status_code, 200)
+        self.assertIn(str(payment.id), [item['id'] for item in list_response.data])
+
+    def test_payment_rejects_service_owned_by_another_tenant(self):
+        other_tenant = Tenant.objects.create(name='Other Tenant', code='other-payment-tenant')
+        other_service = Service.objects.create(
+            tenant=other_tenant,
+            customer_full_name='Other Customer',
+            scheduled_date=timezone.now() + timedelta(days=1),
+        )
+        ServiceOperations.objects.create(
+            tenant=other_tenant,
+            service=other_service,
+            name='Bakim',
+            quantity=1,
+            unit_price=Decimal('100.00'),
+        )
+        payment_method = PaymentMethod.objects.create(tenant=self.tenant, name='Nakit')
+        client = APIClient()
+        client.force_authenticate(self.user)
+
+        response = client.post(
+            '/api/services/service-payments/',
+            {
+                'service': str(other_service.id),
+                'payment_method': payment_method.pk,
+                'amount': '100.00',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('service', response.data)
+        self.assertFalse(ServicePayment.objects.filter(service=other_service).exists())
+
+    def test_status_change_notifies_only_admins_in_service_tenant(self):
+        same_tenant_admin = User.objects.create_user(
+            email='same-tenant-admin@example.com',
+            password='pass123',
+            tenant=self.tenant,
+            user_type='admin',
+        )
+        other_tenant = Tenant.objects.create(name='Other Notification Tenant', code='other-notification-tenant')
+        other_tenant_admin = User.objects.create_user(
+            email='other-tenant-admin@example.com',
+            password='pass123',
+            tenant=other_tenant,
+            user_type='admin',
+        )
+        client = APIClient()
+        client.force_authenticate(self.user)
+
+        response = client.patch(
+            f'/api/services/technician-services/{self.service.id}/',
+            {'service_status': 'completed'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(
+            Notification.objects.filter(
+                user=same_tenant_admin,
+                tenant=self.tenant,
+                related_id=str(self.service.id),
+            ).exists()
+        )
+        self.assertFalse(Notification.objects.filter(user=other_tenant_admin).exists())
+
+    def test_overdue_service_filter_is_tenant_scoped_and_excludes_closed_services(self):
+        admin = User.objects.create_user(
+            email='overdue-admin@example.com',
+            password='pass123',
+            tenant=self.tenant,
+            user_type='admin',
+        )
+        overdue_service = Service.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            customer_full_name='Overdue Customer',
+            scheduled_date=timezone.now() - timedelta(hours=2),
+        )
+        completed_service = Service.objects.create(
+            tenant=self.tenant,
+            customer=self.customer,
+            customer_full_name='Completed Customer',
+            scheduled_date=timezone.now() - timedelta(hours=3),
+        )
+        completed_service.service_status = 'completed'
+        completed_service.save()
+        other_tenant = Tenant.objects.create(name='Other Overdue Tenant', code='other-overdue-tenant')
+        other_service = Service.objects.create(
+            tenant=other_tenant,
+            customer_full_name='Other Overdue Customer',
+            scheduled_date=timezone.now() - timedelta(hours=4),
+        )
+        client = APIClient()
+        client.force_authenticate(admin)
+
+        response = client.get('/api/services/admin-services/', {'overdue': 'true'})
+
+        self.assertEqual(response.status_code, 200, response.data)
+        service_ids = {item['id'] for item in response.data}
+        self.assertIn(str(overdue_service.id), service_ids)
+        self.assertNotIn(str(self.service.id), service_ids)
+        self.assertNotIn(str(completed_service.id), service_ids)
+        self.assertNotIn(str(other_service.id), service_ids)
+
+    def test_model_labels_preserve_turkish_characters(self):
+        self.assertEqual(Service._meta.get_field('device_type').verbose_name, 'Cihaz Türü')
+        self.assertEqual(Service._meta.get_field('device_brand').verbose_name, 'Cihaz Markası')
+        self.assertEqual(Service._meta.get_field('status').related_model._meta.verbose_name_plural, 'Servis Durumları')
 
     def test_only_admin_can_delete_service(self):
         client = APIClient()
@@ -504,3 +653,67 @@ class OperationalAlertTests(TestCase):
 
         repeated_result = send_operational_alerts(now=self.now)
         self.assertEqual(repeated_result['total_sent'], 0)
+
+    def test_manager_receives_one_daily_summary_for_multiple_overdue_services(self):
+        for hours_ago in (1, 2, 3):
+            self.create_service(
+                technician=self.technician,
+                scheduled_date=self.now - timedelta(hours=hours_ago),
+                customer_full_name=f'Müşteri {hours_ago}',
+            )
+
+        result = send_operational_alerts(
+            now=self.now,
+            include_unassigned=False,
+            include_technician_schedule_reminders=False,
+            include_technician_status_reminders=False,
+            include_receivable=False,
+        )
+
+        self.assertEqual(result['overdue'], 1)
+        notification = Notification.objects.get(user=self.manager, title='Geciken Servis Uyarısı')
+        self.assertIn('3 geciken servis', notification.message)
+        self.assertIn('Müşteriler: Müşteri 3, Müşteri 2, Müşteri 1.', notification.message)
+        self.assertEqual(notification.related_screen, 'overdue_services')
+        self.assertIsNone(notification.related_id)
+
+        repeated_result = send_operational_alerts(
+            now=self.now,
+            include_unassigned=False,
+            include_technician_schedule_reminders=False,
+            include_technician_status_reminders=False,
+            include_receivable=False,
+        )
+        self.assertEqual(repeated_result['total_sent'], 0)
+
+    def test_technician_overdue_reminder_is_sent_only_once_for_service(self):
+        service = self.create_service(
+            technician=self.technician,
+            scheduled_date=self.now - timedelta(hours=2),
+        )
+
+        first_result = send_operational_alerts(
+            now=self.now,
+            include_unassigned=False,
+            include_overdue_manager_alerts=False,
+            include_technician_schedule_reminders=False,
+            include_receivable=False,
+        )
+        next_day_result = send_operational_alerts(
+            now=self.now + timedelta(days=1),
+            include_unassigned=False,
+            include_overdue_manager_alerts=False,
+            include_technician_schedule_reminders=False,
+            include_receivable=False,
+        )
+
+        self.assertEqual(first_result['overdue'], 1)
+        self.assertEqual(next_day_result['overdue'], 0)
+        self.assertEqual(
+            Notification.objects.filter(
+                user=self.technician_user,
+                related_id=str(service.id),
+                title='Servis Durumu Güncelleme Hatırlatması',
+            ).count(),
+            1,
+        )

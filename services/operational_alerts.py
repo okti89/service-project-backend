@@ -1,11 +1,11 @@
+from collections import defaultdict
 from datetime import timedelta
 from decimal import Decimal
 
 from accounts.models import User
 from django.db.models import Q
 from django.utils import timezone
-from notifications.models import Notification
-from notifications.services import create_notification
+from notifications.services import create_notification_once
 
 from .models import Service
 
@@ -24,17 +24,16 @@ def _manager_users(tenant):
     )
 
 
-def _already_notified(user, title, service, notification_date):
-    return Notification.objects.filter(
-        user=user, title=title, related_id=str(service.id), created_at__date=notification_date,
-    ).exists()
-
-
-def _notify_once(user, title, message, service, notification_date):
-    if _already_notified(user, title, service, notification_date):
-        return False
-    create_notification(user=user, title=title, message=message, related_id=str(service.id), related_screen=SERVICE_SCREEN)
-    return True
+def _notify_once(user, title, message, dedupe_key, related_id=None, related_screen=SERVICE_SCREEN):
+    _, created = create_notification_once(
+        user=user,
+        title=title,
+        message=message,
+        dedupe_key=dedupe_key,
+        related_id=related_id,
+        related_screen=related_screen,
+    )
+    return int(created)
 
 
 def _service_context(service):
@@ -57,6 +56,15 @@ def _remaining_balance(service):
     total = sum(Decimal(str(item.total_price or 0)) for item in service.items.all())
     paid = sum(Decimal(str(payment.amount or 0)) for payment in service.payments.all())
     return max(total - paid, Decimal('0.00'))
+
+
+def _overdue_customer_summary(services, limit=5):
+    names = [service.customer_full_name or 'Müşteri' for service in services[:limit]]
+    summary = ', '.join(names)
+    remaining_count = len(services) - len(names)
+    if remaining_count > 0:
+        summary = f'{summary} ve {remaining_count} servis daha'
+    return summary
 
 
 def _active_service_queryset():
@@ -82,7 +90,13 @@ def send_operational_alerts(
             service_no, customer, address, appointment, _ = _service_context(service)
             message = f"#{service_no} no'lu servis henüz bir teknisyene atanmadı.\nMüşteri: {customer}\nAdres: {address}\nRandevu: {appointment}"
             for manager in _manager_users(service.tenant):
-                sent['unassigned'] += _notify_once(manager, UNASSIGNED_TITLE, message, service, today)
+                sent['unassigned'] += _notify_once(
+                    manager,
+                    UNASSIGNED_TITLE,
+                    message,
+                    f'operational:unassigned:{service.id}:{today.isoformat()}',
+                    related_id=str(service.id),
+                )
 
     if include_technician_schedule_reminders:
         services = _active_service_queryset().filter(
@@ -93,35 +107,71 @@ def send_operational_alerts(
         for service in services:
             _, customer, address, _, appointment_time = _service_context(service)
             technician_user = getattr(getattr(service, 'technician', None), 'user', None)
-            if technician_user and technician_user.is_active:
+            if technician_user and technician_user.is_active and technician_user.tenant_id == service.tenant_id:
                 message = f"{customer} adlı müşteriye ait, {address} adresinde {appointment_time} saatinde planlanan servis hatırlatması."
-                sent['scheduled'] += _notify_once(technician_user, TECHNICIAN_SCHEDULED_TITLE, message, service, today)
+                sent['scheduled'] += _notify_once(
+                    technician_user,
+                    TECHNICIAN_SCHEDULED_TITLE,
+                    message,
+                    f'operational:scheduled:{service.id}',
+                    related_id=str(service.id),
+                )
 
     if include_overdue_manager_alerts or include_technician_status_reminders:
-        services = _active_service_queryset().filter(scheduled_date__lt=now).select_related('tenant', 'technician__user')
-        for service in services:
-            service_no, customer, address, appointment, appointment_time = _service_context(service)
-            appointment_date = timezone.localtime(service.scheduled_date).strftime('%d.%m.%Y')
-            if include_overdue_manager_alerts:
-                manager_message = (
-                    f"{customer} adlı müşteriye ait, {address} adresinde "
-                    f"{appointment_date} tarihinde {appointment_time} saatinde planlanan servis hatırlatması."
-                )
-                for manager in _manager_users(service.tenant):
-                    sent['overdue'] += _notify_once(manager, OVERDUE_TITLE, manager_message, service, today)
+        services = list(
+            _active_service_queryset()
+            .filter(scheduled_date__lt=now)
+            .select_related('tenant', 'technician__user')
+            .order_by('scheduled_date')
+        )
 
+        if include_overdue_manager_alerts:
+            services_by_tenant = defaultdict(list)
+            for service in services:
+                if service.tenant_id:
+                    services_by_tenant[service.tenant_id].append(service)
+
+            for tenant_services in services_by_tenant.values():
+                tenant = tenant_services[0].tenant
+                service_count = len(tenant_services)
+                oldest_appointment = _service_context(tenant_services[0])[3]
+                customer_summary = _overdue_customer_summary(tenant_services)
+                manager_message = (
+                    f"Şu anda {service_count} geciken servis bulunuyor. "
+                    f"Müşteriler: {customer_summary}. "
+                    f"En eski randevu: {oldest_appointment}. Listeyi kontrol ederek ekibi yönlendirebilirsiniz."
+                )
+                for manager in _manager_users(tenant):
+                    sent['overdue'] += _notify_once(
+                        manager,
+                        OVERDUE_TITLE,
+                        manager_message,
+                        f'operational:manager-overdue:{tenant.id}:{today.isoformat()}',
+                        related_screen='overdue_services',
+                    )
+
+        for service in services:
+            _, customer, address, _, appointment_time = _service_context(service)
+            appointment_date = timezone.localtime(service.scheduled_date).strftime('%d.%m.%Y')
             technician_user = getattr(getattr(service, 'technician', None), 'user', None)
             if (
                 include_technician_status_reminders
                 and service.scheduled_date <= now - timedelta(minutes=30)
                 and technician_user
                 and technician_user.is_active
+                and technician_user.tenant_id == service.tenant_id
             ):
                 message = (
                     f"{customer} adlı müşteriye ait, {address} adresinde {appointment_date} tarihinde "
                     f"{appointment_time} saatinde planlanan servis için durum hatırlatması."
                 )
-                sent['overdue'] += _notify_once(technician_user, TECHNICIAN_OVERDUE_TITLE, message, service, today)
+                sent['overdue'] += _notify_once(
+                    technician_user,
+                    TECHNICIAN_OVERDUE_TITLE,
+                    message,
+                    f'operational:technician-overdue:{service.id}',
+                    related_id=str(service.id),
+                )
 
     if include_receivable:
         services = Service.objects.filter(scheduled_date__lt=now, status__code='completed').select_related('tenant').prefetch_related('items', 'payments')
@@ -132,6 +182,12 @@ def send_operational_alerts(
             service_no, customer, address, appointment, _ = _service_context(service)
             message = f"#{service_no} no'lu tamamlanan servisin kalan tahsilat tutarı {_format_amount(remaining)} TL.\nMüşteri: {customer}\nAdres: {address}\nRandevu: {appointment}"
             for manager in _manager_users(service.tenant):
-                sent['receivable'] += _notify_once(manager, RECEIVABLE_TITLE, message, service, today)
+                sent['receivable'] += _notify_once(
+                    manager,
+                    RECEIVABLE_TITLE,
+                    message,
+                    f'operational:receivable:{service.id}:{today.isoformat()}',
+                    related_id=str(service.id),
+                )
 
     return {**sent, 'date': today, 'total_sent': sum(sent.values())}

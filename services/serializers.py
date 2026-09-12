@@ -93,7 +93,7 @@ class ServiceOperationsSerializer(serializers.ModelSerializer):
     def validate_service(self, value):
         request = self.context.get('request')
         tenant = getattr(getattr(request, 'user', None), 'tenant', None)
-        if value and getattr(getattr(value, 'customer', None), 'tenant', None) != tenant:
+        if value and getattr(value, 'tenant', None) != tenant:
             raise serializers.ValidationError('Bu servis baska bir tenant kaydina ait.')
         return value
 
@@ -126,12 +126,12 @@ class ServicePaymentSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'created_at']
 
-    """def validate_service(self, value):
+    def validate_service(self, value):
         request = self.context.get('request')
         tenant = getattr(getattr(request, 'user', None), 'tenant', None)
-        if value and getattr(getattr(value, 'customer', None), 'tenant', None) != tenant:
+        if value and getattr(value, 'tenant', None) != tenant:
             raise serializers.ValidationError('Bu servis baska bir tenant kaydina ait.')
-        return value"""
+        return value
 
     def validate(self, attrs):
         instance = getattr(self, 'instance', None)

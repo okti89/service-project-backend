@@ -139,7 +139,7 @@ class ServiceStatus(models.Model):
 
     class Meta:
         verbose_name = 'Servis Durumu'
-        verbose_name_plural = 'Servis Durumlari'
+        verbose_name_plural = 'Servis Durumları'
         ordering = ['sort_order', 'name']
         unique_together = ('tenant', 'code')
         indexes = [
@@ -169,8 +169,8 @@ class Service(models.Model):
     customer_address = models.TextField(verbose_name='Müşteri Adresi', blank=True, null=True)
     fault_description = models.TextField(verbose_name='Arıza Açıklaması', blank=True, null=True)
     # CharField yapısı kullanıcı talebiyle korunuyor.
-    device_type = models.ForeignKey(DeviceType, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Cihaz TÃ¼rÃ¼')
-    device_brand = models.ForeignKey(Brand, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Cihaz MarkasÄ±')
+    device_type = models.ForeignKey(DeviceType, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Cihaz Türü')
+    device_brand = models.ForeignKey(Brand, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Cihaz Markası')
     device_model = models.ForeignKey(Model, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Cihaz Modeli')
     technician = models.ForeignKey(Technician, on_delete=models.SET_NULL, null=True, blank=True, related_name='services', verbose_name='Teknisyen')
 
@@ -620,11 +620,14 @@ class ServicePayment(models.Model):
             return 'bank'
         return 'cash'
 
+    def _resolve_tenant(self):
+        return getattr(self.service, 'tenant', None)
+
     def _resolve_account(self):
         from accounting.models import Account
 
         account_type = self._resolve_account_type_from_payment_method()
-        tenant = getattr(getattr(self.service, "customer", None), "tenant", None)
+        tenant = self._resolve_tenant()
         account_qs = Account.objects.filter(account_type=account_type)
         if tenant:
             account_qs = account_qs.filter(tenant=tenant)
@@ -651,7 +654,7 @@ class ServicePayment(models.Model):
         if not self.pk:
             return
 
-        tenant = getattr(getattr(self.service, "customer", None), "tenant", None)
+        tenant = self._resolve_tenant()
         account = self._resolve_account()
         receipt_ref = self._transaction_receipt_ref()
         receipt_number = Transaction.normalize_receipt_number(receipt_ref)
@@ -689,6 +692,7 @@ class ServicePayment(models.Model):
         # Atomic write: if any post_save side effect fails, payment row should
         # not remain persisted alone.
         with transaction.atomic():
+            self.tenant = self._resolve_tenant()
             super().save(*args, **kwargs)
             self._sync_income_transaction()
 
@@ -696,7 +700,7 @@ class ServicePayment(models.Model):
         from accounting.models import Transaction
 
         with transaction.atomic():
-            tenant = getattr(getattr(self.service, "customer", None), "tenant", None)
+            tenant = self._resolve_tenant()
             receipt_ref = self._transaction_receipt_ref()
             receipt_number = Transaction.normalize_receipt_number(receipt_ref)
             income_tx = Transaction.objects.filter(

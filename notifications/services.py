@@ -31,6 +31,47 @@ def _build_push_data(related_id=None, related_screen=None):
     return data or None
 
 
+def _send_single_push(user, title, message, related_id=None, related_screen=None):
+    push_data = _build_push_data(related_id, related_screen)
+
+    if not getattr(user, "is_active", False):
+        return
+
+    try:
+        push_result = send_expo_push_notification(
+            user=user,
+            title=title,
+            body=message,
+            data=push_data,
+        )
+        _log_push_result("single", push_result, {"user_id": getattr(user, "id", None)})
+    except Exception:
+        logger.exception("Single push send raised an unexpected error for user=%s", getattr(user, "id", None))
+
+
+def create_notification_once(user, title, message, dedupe_key, related_id=None, related_screen=None):
+    tenant = getattr(user, "tenant", None)
+    if not tenant or not dedupe_key:
+        return None, False
+
+    with transaction.atomic():
+        notification, created = Notification.objects.get_or_create(
+            user=user,
+            dedupe_key=dedupe_key,
+            defaults={
+                "tenant": tenant,
+                "title": title,
+                "message": message,
+                "related_id": related_id,
+                "related_screen": related_screen,
+            },
+        )
+
+    if created:
+        _send_single_push(user, title, message, related_id, related_screen)
+    return notification, created
+
+
 def create_notification(user, title, message, related_id=None, related_screen=None):
     tenant = getattr(user, "tenant", None)
 
@@ -44,20 +85,7 @@ def create_notification(user, title, message, related_id=None, related_screen=No
             related_screen=related_screen,
         )
 
-    push_data = _build_push_data(related_id, related_screen)
-
-    if getattr(user, "is_active", False):
-        try:
-            push_result = send_expo_push_notification(
-                user=user,
-                title=title,
-                body=message,
-                data=push_data,
-            )
-            _log_push_result("single", push_result, {"user_id": getattr(user, "id", None)})
-        except Exception:
-            logger.exception("Single push send raised an unexpected error for user=%s", getattr(user, "id", None))
-
+    _send_single_push(user, title, message, related_id, related_screen)
     return notification
 
 
