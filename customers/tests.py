@@ -21,7 +21,7 @@ class CustomerSerializerTests(TestCase):
         data = CustomerSerializer(customer).data
 
         self.assertEqual(data["full_name"], "Ada Lovelace")
-        self.assertEqual(data["phone_number"], "5551234567")
+        self.assertEqual(data["phone_number"], "05551234567")
         self.assertEqual(data["email"], "ada@example.com")
         self.assertEqual(data["tenant"], str(tenant.pk))
 
@@ -31,8 +31,8 @@ class CustomerApiTests(TestCase):
         self.client = APIClient()
         self.tenant = Tenant.objects.create(name="Tenant A", code="cust-api-a")
         self.other_tenant = Tenant.objects.create(name="Tenant B", code="cust-api-b")
-        CompanyConfig.objects.create(tenant=self.tenant, name="Firma A")
-        CompanyConfig.objects.create(tenant=self.other_tenant, name="Firma B")
+        CompanyConfig.objects.filter(tenant=self.tenant).update(name="Firma A")
+        CompanyConfig.objects.filter(tenant=self.other_tenant).update(name="Firma B")
         self.user = User.objects.create_user(
             email="customer-admin@example.com",
             password="secret123",

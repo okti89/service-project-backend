@@ -12,10 +12,6 @@ class IsGlobalSearchManager(permissions.BasePermission):
         if user.is_superuser or getattr(user, "user_type", None) == "admin":
             return True
 
-        # Read-only izin (isteğe bağlı daraltabilirsin)
-        if request.method in permissions.SAFE_METHODS:
-            return True
-
         # Technician kontrol
         if getattr(user, "user_type", None) == "technician":
             technician_profile = getattr(user, "technician_profile", None)
@@ -23,8 +19,9 @@ class IsGlobalSearchManager(permissions.BasePermission):
             if not technician_profile:
                 return False
 
-            return getattr(
-                technician_profile.permissions,
+            permission_obj = getattr(technician_profile, "permissions", None)
+            return request.method in permissions.SAFE_METHODS and getattr(
+                permission_obj,
                 "can_use_global_search",
                 False
             )

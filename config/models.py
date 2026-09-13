@@ -90,6 +90,10 @@ class WorkingHour(models.Model):
     def __str__(self):
         return f"{self.get_day_of_week_display()} - {self.company.name}"
 
+    def save(self, *args, **kwargs):
+        self.tenant = self.company.tenant
+        super().save(*args, **kwargs)
+
 
 class HolidayException(models.Model):
     tenant = models.ForeignKey('tenants.Tenant', on_delete=models.CASCADE, related_name='holiday_exceptions', null=True, blank=True)
@@ -107,6 +111,11 @@ class HolidayException(models.Model):
             raise ValidationError('Bitiş tarihi başlangıç tarihinden önce olamaz.')
         if self.is_half_day and self.end_date and self.end_date != self.start_date:
             raise ValidationError('Yarım gün seçiliyse bitiş tarihi başlangıç tarihi ile aynı olmalıdır.')
+
+    def save(self, *args, **kwargs):
+        self.tenant = self.company.tenant
+        self.full_clean()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.title} ({self.start_date})"

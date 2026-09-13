@@ -165,6 +165,9 @@ class StockMovement(models.Model):
 
 
     def save(self, *args, **kwargs):
+        self.tenant = self.product.tenant
+        if self.technician.tenant_id != self.tenant_id:
+            raise ValueError('Stok hareketi, ürün ve kullanıcı aynı firmaya ait olmalıdır.')
         is_new = self._state.adding
 
         super().save(*args, **kwargs)

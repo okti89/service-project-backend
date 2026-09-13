@@ -30,6 +30,10 @@ class Technician(models.Model):
         
     def __str__(self):
         return f"{self.user.get_full_name()} - Teknisyen"
+
+    def save(self, *args, **kwargs):
+        self.tenant = self.user.tenant
+        super().save(*args, **kwargs)
     
 class TechnicianLocation(models.Model):
     tenant = models.ForeignKey('tenants.Tenant', on_delete=models.CASCADE, related_name='technician_locations', null=True, blank=True)
@@ -46,6 +50,10 @@ class TechnicianLocation(models.Model):
     
     def __str__(self):
         return f"{self.technician.get_full_name()} - {self.location}"
+
+    def save(self, *args, **kwargs):
+        self.tenant = self.technician.tenant
+        super().save(*args, **kwargs)
 
 class TechnicianPermissions(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -77,6 +85,10 @@ class TechnicianPermissions(models.Model):
     def __str__(self):
         return f"{self.technician.user.first_name} {self.technician.user.last_name} Yetkileri"
 
+    def save(self, *args, **kwargs):
+        self.tenant = self.technician.tenant
+        super().save(*args, **kwargs)
+
 class TechnicianShift(models.Model):
     tenant = models.ForeignKey('tenants.Tenant', on_delete=models.CASCADE, related_name='technician_shifts', null=True, blank=True)
     technician = models.ForeignKey(
@@ -98,6 +110,10 @@ class TechnicianShift(models.Model):
 
     def __str__(self):
         return f"{self.technician.get_full_name()} - {self.date}"
+
+    def save(self, *args, **kwargs):
+        self.tenant = self.technician.tenant
+        super().save(*args, **kwargs)
 
 class TechnicianAttendance(models.Model):
     STATUS_WORKED = "worked"
@@ -150,6 +166,10 @@ class TechnicianAttendance(models.Model):
 
     def __str__(self):
         return f"{self.technician.user.get_full_name()} - {self.date} - {self.status}"
+
+    def save(self, *args, **kwargs):
+        self.tenant = self.technician.tenant
+        super().save(*args, **kwargs)
 
 
 class LocationLog(models.Model):
@@ -214,4 +234,14 @@ class LocationLog(models.Model):
 
     def __str__(self):
         return f"{self.user.get_full_name()} - {self.arrived_at}"
+
+    def save(self, *args, **kwargs):
+        self.tenant = self.user.tenant
+        if self.technician_id and self.technician.tenant_id != self.tenant_id:
+            raise ValueError('Konum kaydı ve teknisyen aynı firmaya ait olmalıdır.')
+        if self.service_id and self.service.tenant_id != self.tenant_id:
+            raise ValueError('Konum kaydı ve servis aynı firmaya ait olmalıdır.')
+        if self.customer_id and self.customer.tenant_id != self.tenant_id:
+            raise ValueError('Konum kaydı ve müşteri aynı firmaya ait olmalıdır.')
+        super().save(*args, **kwargs)
 

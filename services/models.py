@@ -25,10 +25,14 @@ from .utils import process_service_image as process_image
 logger = logging.getLogger(__name__)
 
 def resolve_technician_user(service):
-    if service.technician and service.technician.user:
-        return service.technician.user
+    tenant = getattr(service, "tenant", None)
 
-    tenant = getattr(getattr(service, "customer", None), "tenant", None)
+    if (
+        service.technician
+        and service.technician.user
+        and service.technician.tenant_id == getattr(tenant, "id", None)
+    ):
+        return service.technician.user
 
     qs = Technician.objects.select_related('user').filter(user__is_active=True)
 
@@ -57,6 +61,7 @@ def create_stock_movement(service, product, qty, movement_type, reason):
         return
 
     StockMovement.objects.create(
+        tenant=service.tenant,
         technician=technician_user,
         product=product,
         movement_type=movement_type,
@@ -73,7 +78,7 @@ class DeviceType(models.Model):
 
     def save(self, *args, **kwargs):
         if self.is_default:
-            DeviceType.objects.exclude(id=self.id).update(is_default=False)
+            DeviceType.objects.filter(tenant=self.tenant).exclude(id=self.id).update(is_default=False)
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -295,6 +300,14 @@ class Service(models.Model):
         self.service_status = status
 
     def save(self, *args, **kwargs):
+        if self.customer_id and self.customer.tenant_id != self.tenant_id:
+            raise ValueError('Servis ve müşteri aynı firmaya ait olmalıdır.')
+        if self.technician_id and self.technician.tenant_id != self.tenant_id:
+            raise ValueError('Servis ve teknisyen aynı firmaya ait olmalıdır.')
+        for relation_name in ('device_type', 'device_brand', 'device_model'):
+            relation = getattr(self, relation_name, None)
+            if relation and relation.tenant_id != self.tenant_id:
+                raise ValueError('Servis cihaz bilgileri aynı firmaya ait olmalıdır.')
         old_status = None
         if self.pk:
             old = Service.objects.select_related('status').filter(pk=self.pk).first()
@@ -357,6 +370,11 @@ class ServiceSignature(models.Model):
                 logger.warning('Service imza işleme: eski kayıt bulunamadı. service_id=%s', self.pk)
             except Exception:
                 logger.exception('Teknisyen imzası işlenemedi. service_id=%s', self.pk)
+
+    def save(self, *args, **kwargs):
+        self.tenant = self.service.tenant
+        self._process_signatures()
+        super().save(*args, **kwargs)
 
 
 
@@ -436,6 +454,7 @@ class WarrantyCertificate(models.Model):
         return 'WRN-' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
 
     def save(self, *args, **kwargs):
+        self.tenant = self.service.tenant
         if not self.certificate_no:
             max_retry = 8
             for _ in range(max_retry):
@@ -483,6 +502,9 @@ class ServiceOperations(models.Model):
         return self.quantity * self.unit_price
 
     def save(self, *args, **kwargs):
+        self.tenant = self.service.tenant
+        if self.product_id and self.product.tenant_id != self.tenant_id:
+            raise ValueError('Servis işlemi ve ürün aynı firmaya ait olmalıdır.')
         is_new = self._state.adding
 
         previous = None
@@ -587,8 +609,7 @@ class PaymentMethod(models.Model):
 
 
 def get_default_payment_type():
-    payment_type = PaymentMethod.objects.filter(is_default=True).first()
-    return payment_type.pk if payment_type else None
+    return None
 
 
 class ServicePayment(models.Model):
@@ -745,6 +766,10 @@ class ServiceTimeline(models.Model):
     def __str__(self):
         return f"{self.service.receipt_number} - {self.timestamp}"
 
+    def save(self, *args, **kwargs):
+        self.tenant = self.service.tenant
+        super().save(*args, **kwargs)
+
 class ServicePhoto(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     tenant = models.ForeignKey('tenants.Tenant', on_delete=models.CASCADE, related_name='service_photos', null=True, blank=True)
@@ -758,6 +783,7 @@ class ServicePhoto(models.Model):
         verbose_name_plural = 'Servis Fotoğrafları'
 
     def save(self, *args, **kwargs):
+        self.tenant = self.service.tenant
         if self.id:
             try:
                 existing_instance = ServicePhoto.objects.get(id=self.id)
@@ -778,8 +804,13 @@ class ServicePhoto(models.Model):
 
 @receiver(pre_delete, sender=Technician)
 def reassign_services_on_technician_delete(sender, instance, **kwargs):
-    admin_tech = Technician.objects.filter(user__is_staff=True, user__is_active=True).first()
+    admin_tech = Technician.objects.filter(
+        tenant=instance.tenant,
+        user__tenant=instance.tenant,
+        user__is_staff=True,
+        user__is_active=True,
+    ).exclude(pk=instance.pk).first()
     if admin_tech and admin_tech != instance:
-        Service.objects.filter(technician=instance).update(technician=admin_tech)
+        Service.objects.filter(technician=instance, tenant=instance.tenant).update(technician=admin_tech)
     else:
-        Service.objects.filter(technician=instance).update(technician=None)
+        Service.objects.filter(technician=instance, tenant=instance.tenant).update(technician=None)

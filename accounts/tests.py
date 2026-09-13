@@ -39,6 +39,7 @@ class UserDeviceTenantSyncTests(TestCase):
         self.assertEqual(device.user, self.user)
         self.assertEqual(device.tenant, self.tenant)
 
+
     def test_register_device_persists_location_permission(self):
         response = self.client.post(
             "/api/accounts/devices/register/",
@@ -81,6 +82,53 @@ class UserDeviceTenantSyncTests(TestCase):
         device.refresh_from_db()
 
         self.assertEqual(device.tenant, self.tenant)
+
+
+class AccountTenantIsolationTests(TestCase):
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name="Account A", code="account-a")
+        self.other_tenant = Tenant.objects.create(name="Account B", code="account-b")
+        self.admin = User.objects.create_user(
+            email="account-admin@example.com",
+            password="pass123",
+            tenant=self.tenant,
+            user_type="admin",
+        )
+        self.other_user = User.objects.create_user(
+            email="account-other@example.com",
+            password="pass123",
+            tenant=self.other_tenant,
+            user_type="technician",
+        )
+
+    def test_authenticated_user_creation_ignores_forged_tenant_header(self):
+        client = APIClient()
+        client.force_authenticate(self.admin)
+        response = client.post(
+            "/api/accounts/admin/users/",
+            {
+                "email": "created-by-admin@example.com",
+                "password": "pass12345",
+                "first_name": "Created",
+                "user_type": "technician",
+            },
+            format="json",
+            HTTP_X_TENANT_CODE=self.other_tenant.code,
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        created = User.objects.get(email="created-by-admin@example.com")
+        self.assertEqual(created.tenant, self.tenant)
+
+    def test_login_does_not_fall_back_to_another_tenant_when_code_is_supplied(self):
+        response = APIClient().post(
+            "/api/accounts/auth/login/",
+            {"email": self.other_user.email, "password": "pass123"},
+            format="json",
+            HTTP_X_TENANT_CODE=self.tenant.code,
+        )
+
+        self.assertEqual(response.status_code, 400)
 
 
 class AccountDeletionTests(TestCase):

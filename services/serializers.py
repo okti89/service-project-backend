@@ -41,16 +41,25 @@ class DeviceTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = DeviceType
         fields = '__all__'
+        read_only_fields = ['tenant']
 
 class BrandSerializer(serializers.ModelSerializer):
     class Meta:
         model = Brand
         fields = '__all__'
+        read_only_fields = ['tenant']
 
 class ModelSerializer(serializers.ModelSerializer):
+    def validate_brand(self, value):
+        tenant = getattr(getattr(self.context.get('request'), 'user', None), 'tenant', None)
+        if value and getattr(value, 'tenant', None) != tenant:
+            raise serializers.ValidationError('Bu marka başka bir firmaya ait.')
+        return value
+
     class Meta:
         model = Model
         fields = '__all__'
+        read_only_fields = ['tenant']
 
 class PaymentMethodSerializer(serializers.ModelSerializer):
     def validate_iban(self, value):
@@ -66,20 +75,21 @@ class PaymentMethodSerializer(serializers.ModelSerializer):
     class Meta:
         model = PaymentMethod
         fields = '__all__'
+        read_only_fields = ['tenant']
 
 
 class ServiceStatusSerializer(serializers.ModelSerializer):
     class Meta:
         model = ServiceStatus
         fields = '__all__'
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'tenant', 'created_at', 'updated_at']
 
 
 class ServiceOperationTemplateSerializer(serializers.ModelSerializer):
     class Meta:
         model = ServiceOperationTemplate
         fields = '__all__'
-        read_only_fields = ['id', 'created_by', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'tenant', 'created_by', 'created_at', 'updated_at']
 
 # === Relational Service Components ===
 class ServiceOperationsSerializer(serializers.ModelSerializer):
@@ -168,6 +178,12 @@ class ServicePaymentSerializer(serializers.ModelSerializer):
         return attrs
 
 class ServiceSignatureSerializer(serializers.ModelSerializer):
+    def validate_service(self, value):
+        tenant = getattr(getattr(self.context.get('request'), 'user', None), 'tenant', None)
+        if value and getattr(value, 'tenant', None) != tenant:
+            raise serializers.ValidationError('Bu servis başka bir firmaya ait.')
+        return value
+
     class Meta:
         model = ServiceSignature
         fields = ['id', 'service', 'customer_signature', 'technician_signature', 'created_at', 'updated_at']
@@ -192,7 +208,19 @@ class ServiceTimelineSerializer(serializers.ModelSerializer):
     def get_new_status_color(self, obj):
         return get_service_status_color(obj.new_status)
 
+    def validate_service(self, value):
+        tenant = getattr(getattr(self.context.get('request'), 'user', None), 'tenant', None)
+        if value and getattr(value, 'tenant', None) != tenant:
+            raise serializers.ValidationError('Bu servis başka bir firmaya ait.')
+        return value
+
 class ServicePhotoSerializer(serializers.ModelSerializer):
+    def validate_service(self, value):
+        tenant = getattr(getattr(self.context.get('request'), 'user', None), 'tenant', None)
+        if value and getattr(value, 'tenant', None) != tenant:
+            raise serializers.ValidationError('Bu servis başka bir firmaya ait.')
+        return value
+
     class Meta:
         model = ServicePhoto
         fields = ['id', 'service', 'image', 'description', 'created_at']
@@ -219,6 +247,12 @@ class WarrantyCertificateSerializer(serializers.ModelSerializer):
             'updated_at',
         ]
         read_only_fields = ['id', 'certificate_no', 'end_date', 'issued_at', 'updated_at']
+
+    def validate_service(self, value):
+        tenant = getattr(getattr(self.context.get('request'), 'user', None), 'tenant', None)
+        if value and getattr(value, 'tenant', None) != tenant:
+            raise serializers.ValidationError('Bu servis başka bir firmaya ait.')
+        return value
 
 class PublicServiceTimelineSerializer(serializers.ModelSerializer):
     old_status_name = serializers.SerializerMethodField()
@@ -441,7 +475,3 @@ class ServiceSerializer(serializers.ModelSerializer):
 
     def get_status_color(self, obj):
         return get_service_status_color(obj.service_status)
-
-
-
-

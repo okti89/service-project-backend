@@ -23,6 +23,7 @@ class GlobalSearchView(APIView):
 
     def get(self, request):
         query = request.query_params.get("q", "").strip()
+        tenant = getattr(request.user, "tenant", None)
 
         if len(query) < 2:
             return Response({
@@ -43,7 +44,7 @@ class GlobalSearchView(APIView):
 
         # ---------------- CUSTOMERS ----------------
         customers = (
-            Customer.objects.annotate(
+            Customer.objects.filter(tenant=tenant).annotate(
                 clean_phone=Replace("phone_number", Value(" "), Value(""))
             )
             .filter(
@@ -67,7 +68,7 @@ class GlobalSearchView(APIView):
 
         # ---------------- SERVICES ----------------
         services = (
-            Service.objects.annotate(
+            Service.objects.filter(tenant=tenant).annotate(
                 clean_cust_phone=Replace("customer__phone_number", Value(" "), Value("")),
                 clean_receipt=Replace("receipt_number", Value(" "), Value("")),
             )
@@ -105,7 +106,7 @@ class GlobalSearchView(APIView):
 
         # ---------------- TECHNICIANS ----------------
         technicians = (
-            Technician.objects.annotate(
+            Technician.objects.filter(tenant=tenant).annotate(
                 clean_phone=Replace("user__phone_number", Value(" "), Value(""))
             )
             .filter(
@@ -131,7 +132,7 @@ class GlobalSearchView(APIView):
 
         # ---------------- PRODUCTS ----------------
         products = (
-            Product.objects.annotate(
+            Product.objects.filter(tenant=tenant).annotate(
                 clean_code=Replace("code", Value(" "), Value(""))
             )
             .filter(

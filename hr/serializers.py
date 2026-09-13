@@ -37,6 +37,7 @@ class PayrollComponentSerializer(serializers.ModelSerializer):
     class Meta:
         model = PayrollComponent
         fields = '__all__'
+        read_only_fields = ('tenant',)
 
 class PayrollSerializer(serializers.ModelSerializer):
     components = PayrollComponentSerializer(many=True, read_only=True)
@@ -49,6 +50,7 @@ class PayrollSerializer(serializers.ModelSerializer):
         model = Payroll
         fields = '__all__'
         read_only_fields = (
+            'tenant',
             'total_premiums',
             'total_deductions',
             'net_salary',
@@ -72,6 +74,14 @@ class PayrollSerializer(serializers.ModelSerializer):
             return user.phone_number
         tech = getattr(obj, "technician", None)
         return getattr(tech, "phone_number", None) if tech else None
+
+    def validate(self, attrs):
+        request = self.context.get("request")
+        tenant = getattr(getattr(request, "user", None), "tenant", None)
+        technician = attrs.get("technician") or getattr(self.instance, "technician", None)
+        if technician and technician.tenant_id != getattr(tenant, "id", None):
+            raise serializers.ValidationError({"technician": "Bu teknisyen bu tenant'a ait degil."})
+        return attrs
 
     def create(self, validated_data):
         technician = validated_data.get('technician')

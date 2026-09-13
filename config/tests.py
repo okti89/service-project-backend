@@ -12,7 +12,9 @@ from technicians.models import Technician
 class ScheduleNotificationSignalTests(TestCase):
     def setUp(self):
         self.tenant = Tenant.objects.create(name='Schedule Tenant', code='schedule-tenant')
-        self.company = CompanyConfig.objects.create(tenant=self.tenant, name='Schedule Company')
+        self.company = CompanyConfig.objects.get(tenant=self.tenant)
+        self.company.name = 'Schedule Company'
+        self.company.save(update_fields=['name', 'updated_at'])
         self.user = User.objects.create_user(
             email='schedule-tech@example.com',
             password='pass123',

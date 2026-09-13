@@ -96,7 +96,7 @@ class HRModelCompatibilityTests(TestCase):
     def test_technician_pdf_view_blocks_cross_tenant_payroll(self):
         payroll = Payroll.objects.create(
             tenant=self.other_tenant,
-            technician=self.technician,
+            technician=self.other_technician,
             period_start=date(2026, 5, 1),
             period_end=date(2026, 5, 31),
             base_salary=Decimal("1000.00"),

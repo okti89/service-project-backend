@@ -4,12 +4,10 @@ import re
 import unicodedata
 import uuid
 from datetime import datetime, time, timedelta
-from urllib.parse import quote, urlencode, urljoin, urlparse
+from urllib.parse import quote, urljoin, urlparse
 
 from django.conf import settings
 from django.core.files.base import ContentFile
-from django.core import signing
-from django.core.signing import BadSignature, SignatureExpired
 from django.core.mail import EmailMessage
 from django.db import transaction
 from django.db.models import Count, Prefetch, Q
@@ -152,28 +150,10 @@ def _normalize_phone_for_whatsapp(raw_phone):
     return ''.join(ch for ch in phone if ch.isdigit())
 
 
-PUBLIC_SERVICE_TOKEN_SALT = "services.public.access.v1"
-
-
-def build_public_service_token(service):
-    if not service:
-        return None
-    signer = signing.TimestampSigner(salt=PUBLIC_SERVICE_TOKEN_SALT)
-    return signer.sign(str(service.id))
-
-
-def resolve_public_service_token(raw_token, max_age_seconds=60 * 60 * 24 * 30):
-    if not raw_token:
-        return None
-    signer = signing.TimestampSigner(salt=PUBLIC_SERVICE_TOKEN_SALT)
-    try:
-        service_id = signer.unsign(raw_token, max_age=max_age_seconds)
-        return service_id
-    except (BadSignature, SignatureExpired):
-        return None
-
-
 def _service_public_tenant(service):
+    service_tenant = getattr(service, "tenant", None)
+    if service_tenant:
+        return service_tenant
     customer_tenant = getattr(getattr(service, "customer", None), "tenant", None)
     if customer_tenant:
         return customer_tenant
@@ -290,6 +270,11 @@ def _build_service_status_whatsapp_url(service, new_status=None, request=None, s
     elif schedule_changed:
         message = (
             f"Servis randevunuz {appointment_label} olarak güncellendi.\n"
+            f"Takip etmek için: {tracking_url}"
+        )
+    elif status_changed:
+        message = (
+            f"Servis Durumunuz {status_label} olarak değiştirildi.\n"
             f"Takip etmek için: {tracking_url}"
         )
     else:
@@ -628,7 +613,7 @@ class ServiceOperationsListCreateView(SerializerAPIView):
 
     def get(self, request):
         serializer = self.get_serializer(
-            ServiceOperations.objects.filter(service__customer__tenant=_request_tenant(request)),
+            ServiceOperations.objects.filter(tenant=_request_tenant(request), service__tenant=_request_tenant(request)),
             many=True,
         )
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -642,7 +627,8 @@ class ServiceOperationsListCreateView(SerializerAPIView):
         try:
             service_operation = ServiceOperations.objects.get(
                 pk=request.data["pk"],
-                service__customer__tenant=_request_tenant(request),
+                tenant=_request_tenant(request),
+                service__tenant=_request_tenant(request),
             )
         except ServiceOperations.DoesNotExist:
             return Response({"error": "İşlem bulunamadı"}, status=status.HTTP_404_NOT_FOUND)
@@ -655,7 +641,8 @@ class ServiceOperationsListCreateView(SerializerAPIView):
         try:
             service_operation = ServiceOperations.objects.get(
                 pk=request.data["pk"],
-                service__customer__tenant=_request_tenant(request),
+                tenant=_request_tenant(request),
+                service__tenant=_request_tenant(request),
             )
         except ServiceOperations.DoesNotExist:
             return Response({"error": "İşlem bulunamadı"}, status=status.HTTP_404_NOT_FOUND)
@@ -785,7 +772,7 @@ class ServicePhotoListCreateView(SerializerAPIView):
 
     def get(self, request):
         serializer = self.get_serializer(
-            ServicePhoto.objects.filter(service__customer__tenant=_request_tenant(request)),
+            ServicePhoto.objects.filter(tenant=_request_tenant(request), service__tenant=_request_tenant(request)),
             many=True,
         )
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -807,7 +794,8 @@ class ServicePhotoListCreateView(SerializerAPIView):
         try:
             service_photo = ServicePhoto.objects.get(
                 pk=request.data["pk"],
-                service__customer__tenant=_request_tenant(request),
+                tenant=_request_tenant(request),
+                service__tenant=_request_tenant(request),
             )
         except ServicePhoto.DoesNotExist:
             return Response({"error": "Fotoğraf bulunamadı"}, status=status.HTTP_404_NOT_FOUND)
@@ -820,7 +808,8 @@ class ServicePhotoListCreateView(SerializerAPIView):
         try:
             service_photo = ServicePhoto.objects.get(
                 pk=request.data["pk"],
-                service__customer__tenant=_request_tenant(request),
+                tenant=_request_tenant(request),
+                service__tenant=_request_tenant(request),
             )
         except ServicePhoto.DoesNotExist:
             return Response({"error": "Fotoğraf bulunamadı"}, status=status.HTTP_404_NOT_FOUND)
@@ -835,7 +824,7 @@ class ServiceSignatureListCreateView(SerializerAPIView):
 
     def get(self, request):
         serializer = self.get_serializer(
-            ServiceSignature.objects.filter(service__customer__tenant=_request_tenant(request)),
+            ServiceSignature.objects.filter(tenant=_request_tenant(request), service__tenant=_request_tenant(request)),
             many=True,
         )
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -859,7 +848,8 @@ class ServiceSignatureListCreateView(SerializerAPIView):
         if service_id:
             existing_signature = ServiceSignature.objects.filter(
                 service_id=service_id,
-                service__customer__tenant=_request_tenant(request),
+                tenant=_request_tenant(request),
+                service__tenant=_request_tenant(request),
             ).first()
 
         if existing_signature:
@@ -878,7 +868,8 @@ class ServiceSignatureListCreateView(SerializerAPIView):
         try:
             service_signature = ServiceSignature.objects.get(
                 pk=request.data["pk"],
-                service__customer__tenant=_request_tenant(request),
+                tenant=_request_tenant(request),
+                service__tenant=_request_tenant(request),
             )
         except ServiceSignature.DoesNotExist:
             return Response({"error": "İmza bulunamadı"}, status=status.HTTP_404_NOT_FOUND)
@@ -891,7 +882,8 @@ class ServiceSignatureListCreateView(SerializerAPIView):
         try:
             service_signature = ServiceSignature.objects.get(
                 pk=request.data["pk"],
-                service__customer__tenant=_request_tenant(request),
+                tenant=_request_tenant(request),
+                service__tenant=_request_tenant(request),
             )
         except ServiceSignature.DoesNotExist:
             return Response({"error": "İmza bulunamadı"}, status=status.HTTP_404_NOT_FOUND)
@@ -904,7 +896,7 @@ class WarrantyCertificateListCreateView(SerializerAPIView):
 
     def get(self, request):
         serializer = self.get_serializer(
-            WarrantyCertificate.objects.filter(service__customer__tenant=_request_tenant(request)),
+            WarrantyCertificate.objects.filter(tenant=_request_tenant(request), service__tenant=_request_tenant(request)),
             many=True,
         )
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -918,7 +910,8 @@ class WarrantyCertificateListCreateView(SerializerAPIView):
         try:
             warranty_certificate = WarrantyCertificate.objects.get(
                 pk=request.data["pk"],
-                service__customer__tenant=_request_tenant(request),
+                tenant=_request_tenant(request),
+                service__tenant=_request_tenant(request),
             )
         except WarrantyCertificate.DoesNotExist:
             return Response({"error": "Garanti belgesi bulunamadı"}, status=status.HTTP_404_NOT_FOUND)
@@ -931,7 +924,8 @@ class WarrantyCertificateListCreateView(SerializerAPIView):
         try:
             warranty_certificate = WarrantyCertificate.objects.get(
                 pk=request.data["pk"],
-                service__customer__tenant=_request_tenant(request),
+                tenant=_request_tenant(request),
+                service__tenant=_request_tenant(request),
             )
         except WarrantyCertificate.DoesNotExist:
             return Response({"error": "Garanti belgesi bulunamadı"}, status=status.HTTP_404_NOT_FOUND)
@@ -1453,7 +1447,7 @@ class PublicServiceDetailView(APIView):
         except Service.DoesNotExist:
             return Response({"detail": "Servis bulunamadı."}, headers={"Cache-Control": "no-store, must-revalidate"}, status=status.HTTP_404_NOT_FOUND)
         serializer = PublicServiceSerializer(service, context={"request": request})
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.data, headers={"Cache-Control": "no-store, must-revalidate"}, status=status.HTTP_200_OK)
 
 class PublicServiceFormPDFView(APIView):
     permission_classes = [permissions.AllowAny]

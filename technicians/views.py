@@ -525,7 +525,7 @@ class TechnicianLocationTrackingView(APIView):
         service = None
         service_id = request.data.get("service")
         if service_id:
-            service = get_object_or_404(Service.objects.filter(customer__tenant=_request_tenant(request)), id=service_id)
+            service = get_object_or_404(Service.objects.filter(tenant=_request_tenant(request)), id=service_id)
 
         customer = service.customer if service and service.customer else None
 
@@ -680,7 +680,7 @@ class LocationLogListView(APIView):
         if technician_id:
             queryset = queryset.filter(technician_id=technician_id, technician__user__tenant=_request_tenant(request))
         if service_id:
-            queryset = queryset.filter(service_id=service_id, service__customer__tenant=_request_tenant(request))
+            queryset = queryset.filter(service_id=service_id, service__tenant=_request_tenant(request))
         if date_from:
             queryset = queryset.filter(arrived_at__date__gte=date_from)
         if date_to:
@@ -797,7 +797,7 @@ class TechnicianShiftDetailView(APIView):
         if not is_admin:
             raise PermissionDenied("Sadece yöneticiler mesai düzenleyebilir.")
 
-        shift = get_object_or_404(TechnicianShift, id=pk)
+        shift = get_object_or_404(TechnicianShift, id=pk, tenant=_request_tenant(request))
 
         date = request.data.get("date")
         start_time = request.data.get("start_time")
@@ -823,7 +823,7 @@ class TechnicianShiftDetailView(APIView):
         if not is_admin:
             raise PermissionDenied("Sadece yöneticiler mesai silebilir.")
 
-        shift = get_object_or_404(TechnicianShift, id=pk)
+        shift = get_object_or_404(TechnicianShift, id=pk, tenant=_request_tenant(request))
         shift.delete()
         return Response({"detail": "Mesai kaydı başarıyla silindi."}, status=status.HTTP_200_OK)
 

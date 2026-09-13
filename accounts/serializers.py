@@ -25,6 +25,20 @@ def find_user_by_email(email, tenant=None):
         .filter(email__iexact=value)
     ).first()
 
+
+def request_tenant_code_supplied(request):
+    if request is None:
+        return False
+    payload = getattr(request, "data", {}) or {}
+    return bool((request.headers.get("X-Tenant-Code") or payload.get("tenant_code") or "").strip())
+
+
+def authenticated_or_resolved_tenant(request):
+    user = getattr(request, "user", None)
+    if user and user.is_authenticated:
+        return getattr(user, "tenant", None)
+    return resolve_tenant_from_request(request)
+
 # =========================
 # ADMIN LOGIN (unchanged logic)
 # =========================
@@ -43,7 +57,10 @@ class AdminLoginSerializer(serializers.Serializer):
         email = attrs.get("email")
         password = attrs.get("password")
 
-        tenant = resolve_tenant_from_request(self.context.get("request"))
+        request = self.context.get("request")
+        tenant = resolve_tenant_from_request(request)
+        if request_tenant_code_supplied(request) and not tenant:
+            raise serializers.ValidationError({"detail": self.error_messages["invalid_credentials"]})
         user = find_user_by_email(email, tenant=tenant)
 
         if not user or not user.check_password(password):
@@ -73,7 +90,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         request = self.context.get("request")
-        tenant = resolve_tenant_from_request(request)
+        tenant = authenticated_or_resolved_tenant(request)
 
         if tenant and not tenant.subscription_info()['is_active']:
             raise serializers.ValidationError({"detail": "Tenant subscription has expired. New user registration is unavailable."})
@@ -99,7 +116,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
-        tenant = resolve_tenant_from_request(self.context.get("request"))
+        tenant = authenticated_or_resolved_tenant(self.context.get("request"))
         if tenant:
             validated_data["tenant"] = tenant
         return User.objects.create_user(**validated_data)
@@ -206,9 +223,12 @@ class LoginSerializer(serializers.Serializer):
     }
 
     def validate(self, attrs):
-        tenant = resolve_tenant_from_request(self.context.get("request"))
+        request = self.context.get("request")
+        tenant = resolve_tenant_from_request(request)
+        if request_tenant_code_supplied(request) and not tenant:
+            raise serializers.ValidationError({"detail": self.error_messages["invalid_credentials"]})
         user = find_user_by_email(attrs["email"], tenant=tenant)
-        if not user:
+        if not user and not request_tenant_code_supplied(request):
             user = find_user_by_email(attrs["email"], tenant=None)
 
         if not user or not user.check_password(attrs["password"]):
@@ -255,12 +275,12 @@ class PasswordResetRequestSerializer(serializers.Serializer):
     email = serializers.EmailField()
 
     def get_user(self):
-        tenant = resolve_tenant_from_request(self.context.get("request"))
+        request = self.context.get("request")
+        tenant = resolve_tenant_from_request(request)
         email = self.validated_data.get("email")
         user = find_user_by_email(email, tenant=tenant)
-        if user:
+        if user or request_tenant_code_supplied(request):
             return user
-        # Fallback: stale/incorrect tenant code should not block password reset lookup.
         return find_user_by_email(email, tenant=None)
 
 class PasswordResetVerifySerializer(serializers.Serializer):
@@ -268,8 +288,11 @@ class PasswordResetVerifySerializer(serializers.Serializer):
     code = serializers.RegexField(regex=r"^\d{4}$", max_length=4, min_length=4)
 
     def validate(self, attrs):
-        tenant = resolve_tenant_from_request(self.context.get("request"))
-        user = find_user_by_email(attrs["email"], tenant=tenant) or find_user_by_email(attrs["email"], tenant=None)
+        request = self.context.get("request")
+        tenant = resolve_tenant_from_request(request)
+        user = find_user_by_email(attrs["email"], tenant=tenant)
+        if not user and not request_tenant_code_supplied(request):
+            user = find_user_by_email(attrs["email"], tenant=None)
 
         if (
             not user
@@ -290,8 +313,11 @@ class SetNewPasswordSerializer(serializers.Serializer):
     new_password = serializers.CharField(min_length=8)
 
     def validate(self, attrs):
-        tenant = resolve_tenant_from_request(self.context.get("request"))
-        user = find_user_by_email(attrs["email"], tenant=tenant) or find_user_by_email(attrs["email"], tenant=None)
+        request = self.context.get("request")
+        tenant = resolve_tenant_from_request(request)
+        user = find_user_by_email(attrs["email"], tenant=tenant)
+        if not user and not request_tenant_code_supplied(request):
+            user = find_user_by_email(attrs["email"], tenant=None)
 
         if not user:
             raise serializers.ValidationError({"detail": "Kod doğrulama başarısız."})

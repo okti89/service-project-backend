@@ -25,7 +25,6 @@ from .views import (
     _build_public_service_tracking_url,
     _build_service_pdf_filename,
     _build_service_status_whatsapp_url,
-    resolve_public_service_token,
 )
 
 
@@ -114,6 +113,37 @@ class ServiceSerializerRegressionTests(TestCase):
         self.assertEqual(data["status_name"], "Yeni")
         self.assertNotIn("technician_status", data)
         self.assertNotIn("technician_status_updated_at", data)
+
+    def test_service_operation_rejects_other_tenant_service_and_product(self):
+        other_tenant = Tenant.objects.create(name="Other operations", code="other-operations")
+        other_service = Service.objects.create(
+            tenant=other_tenant,
+            customer_full_name="Other customer",
+            scheduled_date=timezone.now() + timedelta(days=1),
+        )
+        other_product = Product.objects.create(
+            tenant=other_tenant,
+            name="Other product",
+            price="10.00",
+            stock_quantity=1,
+        )
+        client = APIClient()
+        client.force_authenticate(self.user)
+
+        response = client.post(
+            "/api/services/service-operations/",
+            {
+                "service": str(other_service.id),
+                "product": str(other_product.id),
+                "name": "Cross tenant operation",
+                "quantity": 1,
+                "unit_price": 10,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(ServiceOperations.objects.filter(name="Cross tenant operation").exists())
 
     def test_inventory_product_can_be_added_as_service_operation(self):
         product = Product.objects.create(
@@ -406,17 +436,15 @@ class ServiceSerializerRegressionTests(TestCase):
         self.assertIn("Servis randevunuz", message)
         self.assertIn(f"Takip etmek için: https://panel.example.com/service-tracking/{self.service.id}/", message)
 
-    def test_public_tracking_link_contains_resolvable_access_token(self):
+    def test_public_tracking_link_uses_service_id_without_access_token(self):
         request = self.factory.get(
             "/api/services/admin-services/",
             HTTP_ORIGIN="https://panel.example.com",
         )
 
         tracking_url = _build_public_service_tracking_url(self.service, request=request)
-        token = parse_qs(urlparse(tracking_url).query)["access_token"][0]
 
-        self.assertTrue(tracking_url.startswith(f"https://panel.example.com/service-tracking/{self.service.id}/"))
-        self.assertEqual(resolve_public_service_token(token), str(self.service.id))
+        self.assertEqual(tracking_url, f"https://panel.example.com/service-tracking/{self.service.id}/")
 
     def test_pdf_filename_includes_customer_and_receipt(self):
         filename = _build_service_pdf_filename(self.service)

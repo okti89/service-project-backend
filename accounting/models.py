@@ -256,6 +256,11 @@ class Transaction(models.Model):
                 raise ValidationError(
                     {"category": "Seçilen kategori farklı bir firmaya ait."}
                 )
+
+        if self.service_id and self.service.tenant_id != self.tenant_id:
+            raise ValidationError(
+                {"service": "Seçilen servis farklı bir firmaya ait."}
+            )
             if self.category.company_id and self.company_id != self.category.company_id:
                 raise ValidationError(
                     {"category": "Seçilen kategori farklı bir firmaya ait."}

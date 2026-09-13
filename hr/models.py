@@ -38,6 +38,7 @@ class TechnicianCompensation(models.Model):
                 raise ValidationError("Geçersiz IBAN")
 
     def save(self, *args, **kwargs):
+        self.tenant = self.technician.tenant
         self.clean()
         super().save(*args, **kwargs)
 
@@ -126,6 +127,8 @@ class Payroll(models.Model):
             )
 
     def save(self, *args, **kwargs):
+
+        self.tenant = self.technician.tenant
 
         if not self.base_salary:
             compensation = getattr(
@@ -328,6 +331,8 @@ class PayrollComponent(models.Model):
             )
 
     def save(self, *args, **kwargs):
+
+        self.tenant = self.payroll.tenant
 
         self.full_clean()
 

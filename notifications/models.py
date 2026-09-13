@@ -48,5 +48,9 @@ class Notification(models.Model):
             self.read_at = timezone.now()
             self.save(update_fields=['is_read', 'read_at'])
 
+    def save(self, *args, **kwargs):
+        self.tenant = self.user.tenant
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"{self.user} - {self.title}"

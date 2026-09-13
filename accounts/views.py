@@ -334,7 +334,7 @@ class PasswordResetVerifyView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        serializer = PasswordResetVerifySerializer(data=request.data)
+        serializer = PasswordResetVerifySerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         return Response({"detail": "Kod başarıyla doğrulandı."}, status=status.HTTP_200_OK)
 
@@ -343,7 +343,7 @@ class PasswordResetConfirmView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        serializer = SetNewPasswordSerializer(data=request.data)
+        serializer = SetNewPasswordSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response({"detail": "Parolanız başarıyla sıfırlandı."}, status=status.HTTP_200_OK)

@@ -111,7 +111,7 @@ def calculate_technician_revenue(technician, start_date=None, end_date=None, ten
     # Ciro, servis durumundan bağımsız olarak alınmış gerçek tahsilattır.
     payment_qs = ServicePayment.objects.exclude(service__status__code='cancelled')
     if tenant:
-        payment_qs = payment_qs.filter(service__customer__tenant=tenant)
+        payment_qs = payment_qs.filter(service__tenant=tenant)
     if technician is None:
         payment_qs = payment_qs.filter(service__technician__isnull=True)
     else:
@@ -157,7 +157,7 @@ class DashboardStatsAPIView(APIView):
         expense_qs = Transaction.objects.filter(transaction_type='expense', tenant=tenant)
         reversal_qs = expense_qs.filter(reversal_transaction_filter())
         operational_expense_qs = expense_qs.exclude(reversal_transaction_filter())
-        service_qs = Service.objects.filter(customer__tenant=tenant)
+        service_qs = Service.objects.filter(tenant=tenant)
 
         if start_date and end_date:
             income_qs = income_qs.filter(date__gte=start_date, date__lt=end_date)
@@ -210,16 +210,16 @@ class DashboardStatsAPIView(APIView):
             monthly_total = income_map.get(i) or 0
             monthly_revenue_chart.append({'name': months_tr[i - 1], 'total': monthly_total})
 
-        active_services_count = Service.objects.filter(customer__tenant=tenant).exclude(status__code__in=['completed', 'cancelled']).count()
-        pending_services_count = Service.objects.filter(customer__tenant=tenant, status__code__in=['new', 'assigned', 'in_progress', 'postponed']).count()
-        completed_services_count = Service.objects.filter(customer__tenant=tenant, status__code='completed').count()
-        cancelled_services_count = Service.objects.filter(customer__tenant=tenant, status__code='cancelled').count()
-        total_services_count = Service.objects.filter(customer__tenant=tenant).count()
+        active_services_count = Service.objects.filter(tenant=tenant).exclude(status__code__in=['completed', 'cancelled']).count()
+        pending_services_count = Service.objects.filter(tenant=tenant, status__code__in=['new', 'assigned', 'in_progress', 'postponed']).count()
+        completed_services_count = Service.objects.filter(tenant=tenant, status__code='completed').count()
+        cancelled_services_count = Service.objects.filter(tenant=tenant, status__code='cancelled').count()
+        total_services_count = Service.objects.filter(tenant=tenant).count()
         total_customers_count = Customer.objects.filter(tenant=tenant).count()
         technicians_count = Technician.objects.filter(user__is_active=True, user__tenant=tenant).count()
         critical_stock_count = Product.objects.filter(stock_quantity__lte=5, is_active=True, tenant=tenant).count()
 
-        recent_services = Service.objects.filter(customer__tenant=tenant).select_related('customer', 'technician__user').order_by('-created_at')[:5]
+        recent_services = Service.objects.filter(tenant=tenant).select_related('customer', 'technician__user').order_by('-created_at')[:5]
         recent_activity = []
         for service in recent_services:
             status_code = service.service_status or 'new'
@@ -269,7 +269,7 @@ class GeneralPerformanceAPIView(APIView):
         expense_qs = Transaction.objects.filter(transaction_type='expense', tenant=tenant)
         reversal_qs = expense_qs.filter(reversal_transaction_filter())
         operational_expense_qs = expense_qs.exclude(reversal_transaction_filter())
-        service_qs = Service.objects.filter(customer__tenant=tenant)
+        service_qs = Service.objects.filter(tenant=tenant)
 
         if start_date and end_date:
             income_qs = income_qs.filter(date__gte=start_date, date__lt=end_date)
@@ -342,7 +342,7 @@ class TechnicianPerformanceAPIView(APIView):
         data = []
 
         for tech in technicians:
-            completed_qs = Service.objects.filter(technician=tech, status__code='completed', customer__tenant=tenant)
+            completed_qs = Service.objects.filter(technician=tech, status__code='completed', tenant=tenant)
             if start_date and end_date:
                 completed_qs = completed_qs.filter(created_at__gte=start_date, created_at__lt=end_date)
 
@@ -358,7 +358,7 @@ class TechnicianPerformanceAPIView(APIView):
                 }
             )
 
-        unassigned_completed_qs = Service.objects.filter(technician__isnull=True, status__code='completed', customer__tenant=tenant)
+        unassigned_completed_qs = Service.objects.filter(technician__isnull=True, status__code='completed', tenant=tenant)
         if start_date and end_date:
             unassigned_completed_qs = unassigned_completed_qs.filter(created_at__gte=start_date, created_at__lt=end_date)
 
@@ -405,9 +405,9 @@ class TechnicianDetailPerformanceAPIView(APIView):
         start_date, end_date = parse_date_filters(request)
 
         if is_unassigned:
-            service_qs = Service.objects.filter(technician__isnull=True, customer__tenant=tenant).select_related('customer', 'technician__user')
+            service_qs = Service.objects.filter(technician__isnull=True, tenant=tenant).select_related('customer', 'technician__user')
         else:
-            service_qs = Service.objects.filter(technician=tech, customer__tenant=tenant).select_related('customer', 'technician__user')
+            service_qs = Service.objects.filter(technician=tech, tenant=tenant).select_related('customer', 'technician__user')
         if start_date and end_date:
             service_qs = service_qs.filter(
                 Q(created_at__gte=start_date, created_at__lt=end_date)
@@ -446,8 +446,6 @@ class MyPerformanceAPIView(APIView):
         tenant = get_request_tenant(request)
         tech = Technician.objects.filter(user=request.user, user__tenant=tenant).first()
         if not tech:
-            tech = Technician.objects.filter(user=request.user).first()
-        if not tech:
             return Response(
                 {
                     'technician_id': None,
@@ -462,7 +460,7 @@ class MyPerformanceAPIView(APIView):
 
         start_date, end_date = parse_date_filters(request)
 
-        service_qs = Service.objects.filter(technician=tech, customer__tenant=tenant).select_related('customer', 'technician__user')
+        service_qs = Service.objects.filter(technician=tech, tenant=tenant).select_related('customer', 'technician__user')
         if start_date and end_date:
             service_qs = service_qs.filter(
                 Q(created_at__gte=start_date, created_at__lt=end_date)
@@ -506,7 +504,7 @@ class OverdueReceivablesAPIView(APIView):
             limit = max(1, min(int(limit_raw), 500))
 
         service_qs = (
-            Service.objects.filter(customer__tenant=tenant, scheduled_date__lt=now)
+            Service.objects.filter(tenant=tenant, scheduled_date__lt=now)
             .exclude(status__code='cancelled')
             .select_related('customer', 'status', 'technician__user')
             .prefetch_related('items', 'payments')

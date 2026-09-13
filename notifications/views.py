@@ -168,7 +168,7 @@ class NewsFeedView(APIView):
         model_fields = {f.name for f in Service._meta.get_fields()}
         qs = Service.objects.all()
         if self._tenant() and "customer" in model_fields:
-            qs = qs.filter(customer__tenant=self._tenant())
+            qs = qs.filter(tenant=self._tenant())
 
         if start and end and "created_at" in model_fields:
             qs = qs.filter(created_at__gte=start, created_at__lt=end)

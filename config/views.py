@@ -113,7 +113,9 @@ class CompanyConfigViewSet(viewsets.ModelViewSet):
             return
 
         # ⚠️ race condition risk reduced (still DB-level constraint önerilir)
-        if CompanyConfig.objects.filter(tenant=tenant).exclude(pk=tenant.pk).exists():
+        from tenants.models import Tenant
+
+        if Tenant.objects.filter(code=normalized).exclude(pk=tenant.pk).exists():
             raise ValueError("Bu firma kodu zaten kullanılıyor.")
 
         tenant.code = normalized

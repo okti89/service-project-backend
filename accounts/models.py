@@ -197,8 +197,7 @@ class UserDevice(models.Model):
     last_used_at = models.DateTimeField(auto_now=True)
 
     def save(self, *args, **kwargs):
-        if not self.tenant_id and getattr(self.user, "tenant_id", None):
-            self.tenant = self.user.tenant
+        self.tenant = self.user.tenant
         super().save(*args, **kwargs)
 
     def __str__(self):

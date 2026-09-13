@@ -3,6 +3,7 @@ from datetime import datetime, time
 from config.models import CompanyConfig, WorkingHour
 from django.test import TestCase
 from django.utils import timezone
+from rest_framework.test import APIClient
 from notifications.models import Notification
 from tenants.models import Tenant
 from accounts.models import User
@@ -19,7 +20,9 @@ from .shift_reminders import (
 class ShiftStartReminderTests(TestCase):
     def setUp(self):
         self.tenant = Tenant.objects.create(name='Reminder Tenant', code='reminder-tenant')
-        self.company = CompanyConfig.objects.create(tenant=self.tenant, name='Reminder Company')
+        self.company = CompanyConfig.objects.get(tenant=self.tenant)
+        self.company.name = 'Reminder Company'
+        self.company.save(update_fields=['name', 'updated_at'])
         self.user = User.objects.create_user(
             email='reminder-tech@example.com',
             password='pass123',
@@ -52,6 +55,7 @@ class ShiftStartReminderTests(TestCase):
         repeated_result = send_shift_start_reminders(now=self.reminder_time)
 
         self.assertEqual(repeated_result['sent'], 0)
+
 
     def test_skips_technician_on_leave_or_with_open_shift(self):
         TechnicianAttendance.objects.create(
@@ -95,3 +99,39 @@ class ShiftStartReminderTests(TestCase):
 
         repeated_result = send_shift_end_reminders(now=end_reminder_time)
         self.assertEqual(repeated_result['sent'], 0)
+
+
+class TechnicianShiftTenantIsolationTests(TestCase):
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name="Shift A", code="shift-a")
+        self.other_tenant = Tenant.objects.create(name="Shift B", code="shift-b")
+        self.admin = User.objects.create_user(
+            email="shift-admin@example.com",
+            password="pass123",
+            tenant=self.tenant,
+            user_type="admin",
+        )
+        other_user = User.objects.create_user(
+            email="shift-other@example.com",
+            password="pass123",
+            tenant=self.other_tenant,
+            user_type="technician",
+        )
+        self.shift = TechnicianShift.objects.create(
+            tenant=self.other_tenant,
+            technician=other_user,
+            date=timezone.localdate(),
+            start_time=timezone.now(),
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.admin)
+
+    def test_admin_cannot_update_or_delete_another_tenant_shift(self):
+        endpoint = f"/api/technicians/shifts/{self.shift.pk}/"
+
+        update_response = self.client.put(endpoint, {"end_time": timezone.now().isoformat()}, format="json")
+        delete_response = self.client.delete(endpoint)
+
+        self.assertEqual(update_response.status_code, 404)
+        self.assertEqual(delete_response.status_code, 404)
+        self.assertTrue(TechnicianShift.objects.filter(pk=self.shift.pk).exists())
