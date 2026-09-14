@@ -23,5 +23,6 @@ class GeneralPerformanceSerializer(serializers.Serializer):
 class TechnicianPerformanceSerializer(serializers.Serializer):
     technician_id = serializers.UUIDField(allow_null=True)
     technician_name = serializers.CharField(max_length=200)
+    technician_phone = serializers.CharField(max_length=20, allow_blank=True, allow_null=True, required=False)
     completed_services_count = serializers.IntegerField()
     total_revenue_generated = serializers.DecimalField(max_digits=15, decimal_places=2)

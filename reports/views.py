@@ -1,10 +1,11 @@
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from decimal import Decimal
+from uuid import UUID
 
 # Reports views configuration
 from django.db.models import Q, Sum
 from django.db.models.functions import TruncMonth
-from django.http import FileResponse
+from django.http import FileResponse, HttpResponse
 from django.utils import timezone as tz
 from rest_framework import permissions, status
 from rest_framework.response import Response
@@ -17,7 +18,13 @@ from services.models import Service, ServicePayment
 from technicians.models import Technician
 
 from .serializers import GeneralPerformanceSerializer, TechnicianPerformanceSerializer
-from .utils import generate_general_performance_pdf, generate_technician_performance_pdf
+from .permissions import IsReportManager
+from .utils import (
+    generate_daily_service_list_pdf,
+    generate_daily_summary_pdf,
+    generate_general_performance_pdf,
+    generate_technician_performance_pdf,
+)
 
 
 SERVICE_STATUS_COLORS = {
@@ -74,6 +81,16 @@ def parse_date_filters(request):
             return None, None
 
     return start_date, end_date
+
+
+def parse_daily_report_date(request):
+    raw_date = (request.query_params.get('date') or '').strip()
+    if not raw_date:
+        return tz.localdate()
+    try:
+        return datetime.strptime(raw_date, '%Y-%m-%d').date()
+    except ValueError:
+        return None
 
 
 def calculate_outstanding_receivables(service_queryset):
@@ -139,6 +156,180 @@ def serialize_service_for_report(service, start_date=None, end_date=None):
         'completed_at': service.updated_at if service.service_status == 'completed' else None,
         'total_payment': total_payment,
     }
+
+
+class DailySummaryPDFView(APIView):
+    permission_classes = [IsReportManager]
+
+    def get(self, request):
+        tenant = get_request_tenant(request)
+        report_date = parse_daily_report_date(request)
+        if report_date is None:
+            return Response({'date': 'Tarih YYYY-MM-DD formatında olmalıdır.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        start = tz.make_aware(datetime.combine(report_date, time.min))
+        end = start + timedelta(days=1)
+        services = list(
+            Service.objects.filter(tenant=tenant, scheduled_date__gte=start, scheduled_date__lt=end)
+            .exclude(status__code='cancelled')
+            .select_related('technician__user', 'status')
+            .prefetch_related('items', 'payments__payment_method')
+            .order_by('scheduled_date', 'receipt_number')
+        )
+        daily_payments = list(
+            ServicePayment.objects.filter(
+                tenant=tenant,
+                created_at__gte=start,
+                created_at__lt=end,
+            )
+            .exclude(service__status__code='cancelled')
+            .select_related('service', 'payment_method')
+        )
+
+        payment_by_service = {}
+        distribution = {}
+        collected_total = Decimal('0.00')
+        for payment in daily_payments:
+            amount = Decimal(str(payment.amount or 0))
+            collected_total += amount
+            payment_by_service.setdefault(payment.service_id, []).append(payment)
+            method_name = getattr(payment.payment_method, 'name', None) or 'Belirtilmedi'
+            distribution[method_name] = distribution.get(method_name, Decimal('0.00')) + amount
+
+        total_revenue = Decimal('0.00')
+        outstanding_total = Decimal('0.00')
+        rows = []
+        for service in services:
+            total_amount = sum((Decimal(str(item.total_price or 0)) for item in service.items.all()), Decimal('0.00'))
+            all_paid = sum((Decimal(str(payment.amount or 0)) for payment in service.payments.all()), Decimal('0.00'))
+            total_revenue += total_amount
+            outstanding_total += max(Decimal('0.00'), total_amount - all_paid)
+            service_payments = payment_by_service.get(service.id, [])
+            payment_method = ', '.join(dict.fromkeys(
+                (getattr(payment.payment_method, 'name', None) or 'Belirtilmedi')
+                for payment in service_payments
+            )) or 'Bekliyor'
+            operation_name = ', '.join(
+                str(item.name or item.description or '').strip()
+                for item in service.items.all()[:2]
+                if str(item.name or item.description or '').strip()
+            ) or (service.fault_description or '-')
+            technician_name = ''
+            if getattr(service.technician, 'user', None):
+                technician_name = service.technician.user.get_full_name() or service.technician.user.email
+            rows.append({
+                'receipt_number': service.receipt_number,
+                'customer_name': service.customer_full_name,
+                'operation_name': operation_name,
+                'technician_name': technician_name,
+                'payment_method': payment_method,
+                'total_amount': total_amount,
+            })
+
+        data = {
+            'report_date': report_date,
+            'total_services': len(services),
+            'total_revenue': total_revenue,
+            'collected_total': collected_total,
+            'outstanding_total': outstanding_total,
+            'services': rows,
+            'payment_distribution': [
+                {'name': name, 'amount': amount}
+                for name, amount in sorted(distribution.items(), key=lambda item: (-item[1], item[0]))
+            ],
+        }
+        pdf_buffer = generate_daily_summary_pdf(data, tenant=tenant)
+        filename = f"gunluk_icmal_{report_date.strftime('%Y_%m_%d')}.pdf"
+        response = HttpResponse(pdf_buffer.getvalue(), content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+
+
+class DailyServiceListPDFView(APIView):
+    """Selected day's tenant-scoped operational schedule as a printable PDF."""
+    permission_classes = [IsReportManager]
+
+    def get(self, request):
+        tenant = get_request_tenant(request)
+        report_date = parse_daily_report_date(request)
+        if report_date is None:
+            return Response({'date': 'Tarih YYYY-MM-DD formatında olmalıdır.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        technician = None
+        technician_id = (request.query_params.get('technician_id') or '').strip()
+        if technician_id:
+            try:
+                technician = Technician.objects.select_related('user').filter(tenant=tenant, id=UUID(technician_id)).first()
+            except (ValueError, TypeError):
+                return Response({'technician_id': 'Geçerli bir teknisyen seçilmelidir.'}, status=status.HTTP_400_BAD_REQUEST)
+            if technician is None:
+                return Response({'technician_id': 'Seçilen teknisyen bu firmaya ait değil.'}, status=status.HTTP_404_NOT_FOUND)
+
+        start = tz.make_aware(datetime.combine(report_date, time.min))
+        end = start + timedelta(days=1)
+        service_queryset = (
+            Service.objects.filter(tenant=tenant, scheduled_date__gte=start, scheduled_date__lt=end)
+            .exclude(status__code='cancelled')
+            .select_related('technician__user', 'status', 'device_type', 'device_brand', 'device_model')
+            .prefetch_related('items')
+            .order_by('scheduled_date', 'receipt_number')
+        )
+        if technician:
+            service_queryset = service_queryset.filter(technician=technician)
+        services = list(service_queryset)
+
+        status_counts = {'planned': 0, 'in_progress': 0, 'completed': 0}
+        rows = []
+        for service in services:
+            status_code = service.service_status
+            if status_code == 'completed':
+                status_counts['completed'] += 1
+            elif status_code == 'in_progress':
+                status_counts['in_progress'] += 1
+            else:
+                status_counts['planned'] += 1
+
+            technician_name = 'Atanmadı'
+            if getattr(service.technician, 'user', None):
+                technician_name = service.technician.user.get_full_name() or service.technician.user.email
+            operation_name = ', '.join(
+                str(item.name or item.description or '').strip()
+                for item in service.items.all()[:2]
+                if str(item.name or item.description or '').strip()
+            ) or (service.fault_description or 'İşlem belirtilmedi')
+            device_name = ' '.join(
+                str(value).strip()
+                for value in (service.device_type, service.device_brand, service.device_model)
+                if value
+            )
+            rows.append({
+                'time': tz.localtime(service.scheduled_date).strftime('%H:%M'),
+                'receipt_number': service.receipt_number or '-',
+                'customer_name': service.customer_full_name or '-',
+                'customer_phone': service.customer_phone or '-',
+                'customer_address': service.customer_address or 'Adres belirtilmedi',
+                'operation_name': operation_name,
+                'device_name': device_name,
+                'technician_name': technician_name,
+                'status_name': getattr(service.status, 'name', None) or 'Yeni',
+                'status_code': status_code,
+            })
+
+        data = {
+            'report_date': report_date,
+            'total_services': len(services),
+            'planned_count': status_counts['planned'],
+            'in_progress_count': status_counts['in_progress'],
+            'completed_count': status_counts['completed'],
+            'services': rows,
+            'technician_name': technician.user.get_full_name() or technician.user.email if technician else '',
+        }
+        pdf_buffer = generate_daily_service_list_pdf(data, tenant=tenant)
+        filename_prefix = 'teknisyen_servis_listesi' if technician else 'gunluk_servis_listesi'
+        filename = f"{filename_prefix}_{report_date.strftime('%Y_%m_%d')}.pdf"
+        response = HttpResponse(pdf_buffer.getvalue(), content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
 
 
 class DashboardStatsAPIView(APIView):
@@ -353,6 +544,7 @@ class TechnicianPerformanceAPIView(APIView):
                 {
                     'technician_id': tech.id,
                     'technician_name': tech.user.get_full_name() or tech.user.email,
+                    'technician_phone': tech.user.phone_number or '',
                     'completed_services_count': completed_count,
                     'total_revenue_generated': revenue,
                 }

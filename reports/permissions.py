@@ -9,7 +9,7 @@ class IsReportManager(permissions.BasePermission):
             return False
 
         # Admin full access
-        if getattr(user, "user_type", None) == "admin":
+        if user.is_superuser or user.is_staff or getattr(user, "user_type", None) == "admin":
             return True
 
         # Technician kontrolü
