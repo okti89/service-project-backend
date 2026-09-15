@@ -4,7 +4,9 @@ from .views import (
     TechnicianPerformanceAPIView,
     TechnicianDetailPerformanceAPIView,
     DashboardStatsAPIView,
+    DailyServiceListAPIView,
     DailyServiceListPDFView,
+    DailySummaryAPIView,
     DailySummaryPDFView,
     MyPerformanceAPIView,
     OverdueReceivablesAPIView,
@@ -12,7 +14,9 @@ from .views import (
 
 urlpatterns = [
     path('dashboard/', DashboardStatsAPIView.as_view(), name='report-dashboard'),
+    path('daily-summary/', DailySummaryAPIView.as_view(), name='report-daily-summary'),
     path('daily-summary/pdf/', DailySummaryPDFView.as_view(), name='report-daily-summary-pdf'),
+    path('daily-service-list/', DailyServiceListAPIView.as_view(), name='report-daily-service-list'),
     path('daily-service-list/pdf/', DailyServiceListPDFView.as_view(), name='report-daily-service-list-pdf'),
     path('general/', GeneralPerformanceAPIView.as_view(), name='report-general'),
     path('technician/', TechnicianPerformanceAPIView.as_view(), name='report-technician'),

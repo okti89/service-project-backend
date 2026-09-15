@@ -54,6 +54,14 @@ class DailySummaryPDFTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
 
+    def test_daily_summary_json_is_tenant_scoped(self):
+        response = self.client.get(reverse('report-daily-summary'), {'date': self.report_date.isoformat()})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['total_services'], 1)
+        self.assertEqual(response.data['services'][0]['customer_name'], 'PDF Müşterisi')
+        self.assertEqual(str(response.data['total_revenue']), '1250.00')
+
     def test_daily_service_list_pdf_is_tenant_scoped(self):
         response = self.client.get(reverse('report-daily-service-list-pdf'), {'date': self.report_date.isoformat()})
 
@@ -61,6 +69,13 @@ class DailySummaryPDFTests(TestCase):
         self.assertEqual(response['Content-Type'], 'application/pdf')
         self.assertIn('gunluk_servis_listesi_', response['Content-Disposition'])
         self.assertGreater(len(response.content), 1000)
+
+    def test_daily_service_list_json_is_tenant_scoped(self):
+        response = self.client.get(reverse('report-daily-service-list'), {'date': self.report_date.isoformat()})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['total_services'], 1)
+        self.assertEqual(response.data['services'][0]['customer_name'], 'PDF Müşterisi')
 
     def test_technician_daily_service_list_requires_same_tenant_technician(self):
         technician_user = User.objects.create_user(
