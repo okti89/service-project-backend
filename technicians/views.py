@@ -928,8 +928,9 @@ class TechnicianShiftStartView(APIView):
         now = parse_iso_datetime(request.data.get("timestamp")) or timezone.now()
         shift_date = local_date_from_datetime(now)
 
-        shift = (
+        open_shift = (
             TechnicianShift.objects.filter(
+                tenant=_request_tenant(request),
                 technician=technician.user,
                 end_time__isnull=True,
             )
@@ -938,7 +939,19 @@ class TechnicianShiftStartView(APIView):
         )
         created = False
 
-        if shift:
+        if open_shift:
+            open_shift_date = local_date_from_datetime(open_shift.start_time) if open_shift.start_time else open_shift.date
+            if open_shift_date != shift_date:
+                return Response(
+                    {
+                        "detail": "Önceki güne ait açık mesai kaydınız bulunuyor. Yeni mesai başlatmadan önce bu mesaiyi bitirin.",
+                        "shift_id": open_shift.id,
+                        "shift": build_shift_payload(open_shift, technician),
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            shift = open_shift
             updates = []
             if not shift.start_time:
                 shift.start_time = now
@@ -951,6 +964,7 @@ class TechnicianShiftStartView(APIView):
                 shift.save(update_fields=updates)
         else:
             shift = TechnicianShift.objects.filter(
+                tenant=_request_tenant(request),
                 technician=technician.user,
                 date=shift_date,
             ).order_by("-updated_at").first()
@@ -958,6 +972,9 @@ class TechnicianShiftStartView(APIView):
             if shift:
                 shift.end_time = None
                 update_fields = ["end_time"]
+                if not shift.start_time:
+                    shift.start_time = now
+                    update_fields.append("start_time")
                 expected_shift_date = local_date_from_datetime(shift.start_time or now)
                 if shift.date != expected_shift_date:
                     shift.date = expected_shift_date
@@ -965,6 +982,7 @@ class TechnicianShiftStartView(APIView):
                 shift.save(update_fields=update_fields)
             else:
                 shift = TechnicianShift.objects.create(
+                    tenant=_request_tenant(request),
                     technician=technician.user,
                     date=shift_date,
                     start_time=now,

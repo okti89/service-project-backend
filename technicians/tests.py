@@ -1,4 +1,4 @@
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 
 from config.models import CompanyConfig, WorkingHour
 from django.test import TestCase
@@ -135,3 +135,61 @@ class TechnicianShiftTenantIsolationTests(TestCase):
         self.assertEqual(update_response.status_code, 404)
         self.assertEqual(delete_response.status_code, 404)
         self.assertTrue(TechnicianShift.objects.filter(pk=self.shift.pk).exists())
+
+
+class TechnicianShiftStartTests(TestCase):
+    def setUp(self):
+        self.tenant = Tenant.objects.create(name="Shift Start", code="shift-start")
+        self.user = User.objects.create_user(
+            email="shift-start-tech@example.com",
+            password="pass123",
+            tenant=self.tenant,
+            user_type="technician",
+            approval_status="approved",
+        )
+        self.technician = self.user.technician_profile
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+        self.endpoint = "/api/technicians/shifts/start/"
+
+    def test_start_returns_active_shift_with_start_time(self):
+        response = self.client.post(self.endpoint, {}, format="json")
+
+        self.assertEqual(response.status_code, 201)
+        self.assertIsNotNone(response.data["start_time"])
+        self.assertIsNone(response.data["end_time"])
+        self.assertEqual(response.data["shift_status"], "in_progress")
+
+    def test_start_rejects_open_shift_from_previous_day(self):
+        old_start = timezone.now() - timedelta(days=40)
+        old_shift = TechnicianShift.objects.create(
+            tenant=self.tenant,
+            technician=self.user,
+            date=timezone.localtime(old_start).date(),
+            start_time=old_start,
+            end_time=None,
+        )
+
+        response = self.client.post(self.endpoint, {}, format="json")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["shift_id"], old_shift.id)
+        self.assertEqual(response.data["shift"]["id"], old_shift.id)
+        self.assertEqual(response.data["shift"]["shift_status"], "in_progress")
+        self.assertIn("Önceki güne ait açık mesai", response.data["detail"])
+
+    def test_start_fills_missing_start_time_on_todays_record(self):
+        shift = TechnicianShift.objects.create(
+            tenant=self.tenant,
+            technician=self.user,
+            date=timezone.localdate(),
+            start_time=None,
+            end_time=timezone.now(),
+        )
+
+        response = self.client.post(self.endpoint, {}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        shift.refresh_from_db()
+        self.assertIsNotNone(shift.start_time)
+        self.assertIsNone(shift.end_time)
