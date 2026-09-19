@@ -85,7 +85,7 @@ class TenantMembership(models.Model):
     period_number = models.PositiveIntegerField(editable=False)
     plan = models.CharField(max_length=20, choices=Plan.choices, default=Plan.PREMIUM)
     premium_started_at = models.DateField()
-    renewal_date = models.DateField(editable=False)
+    renewal_date = models.DateField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -106,7 +106,10 @@ class TenantMembership(models.Model):
             last_period = TenantMembership.objects.filter(tenant=self.tenant).order_by('-period_number').values_list('period_number', flat=True).first()
             self.period_number = (last_period or 0) + 1
         if not self.renewal_date:
-            self.renewal_date = self.one_year_after(self.premium_started_at)
+            if self.plan == self.Plan.TRIAL:
+                self.renewal_date = self.premium_started_at + timedelta(days=5)
+            else:
+                self.renewal_date = self.one_year_after(self.premium_started_at)
         super().save(*args, **kwargs)
 
     def renew(self):
