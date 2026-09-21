@@ -9,13 +9,15 @@ from .models import Tenant, TenantMembership
 class TenantMembershipAdminForm(forms.ModelForm):
     class Meta:
         model = TenantMembership
-        fields = ('tenant', 'plan', 'premium_started_at', 'renewal_date')
+        fields = ('tenant', 'plan', 'period_number', 'premium_started_at', 'renewal_date')
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if not self.instance.pk:
             self.fields['premium_started_at'].initial = timezone.localdate()
         self.fields['premium_started_at'].label = 'Üyelik Başlangıç Tarihi'
+        self.fields['period_number'].label = 'Dönem Numarası'
+        self.fields['period_number'].help_text = 'Aynı firmada her dönem numarası yalnızca bir kez kullanılabilir.'
         self.fields['renewal_date'].label = 'Bitiş Tarihi'
         self.fields['renewal_date'].help_text = 'Boş bırakılırsa Deneme için 5 gün, Premium için 1 yıl sonrası otomatik hesaplanır.'
 
@@ -55,8 +57,8 @@ class TenantMembershipAdmin(TurkishAdminMixin, admin.ModelAdmin):
     list_filter = ('plan', 'tenant')
     search_fields = ('tenant__name', 'tenant__code')
     form = TenantMembershipAdminForm
-    fields = ('tenant', 'plan', 'premium_started_at', 'renewal_date', 'period_number', 'created_at')
-    readonly_fields = ('period_number', 'created_at')
+    fields = ('tenant', 'plan', 'period_number', 'premium_started_at', 'renewal_date', 'created_at')
+    readonly_fields = ('created_at',)
     actions = ('renew_selected_memberships',)
 
     def get_readonly_fields(self, request, obj=None):

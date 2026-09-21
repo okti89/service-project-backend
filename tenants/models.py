@@ -82,7 +82,7 @@ class TenantMembership(models.Model):
         PREMIUM = 'premium', 'Premium'
 
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='memberships')
-    period_number = models.PositiveIntegerField(editable=False)
+    period_number = models.PositiveIntegerField()
     plan = models.CharField(max_length=20, choices=Plan.choices, default=Plan.PREMIUM)
     premium_started_at = models.DateField()
     renewal_date = models.DateField(blank=True)

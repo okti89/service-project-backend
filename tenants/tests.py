@@ -63,6 +63,7 @@ class TenantMembershipAdminTests(TestCase):
         response = self.client.post(self.url, {
             'tenant': str(self.tenant.pk),
             'plan': TenantMembership.Plan.PREMIUM,
+            'period_number': '4',
             'premium_started_at': start.isoformat(),
             'renewal_date': end.isoformat(),
             '_save': 'Kaydet',
@@ -72,7 +73,7 @@ class TenantMembershipAdminTests(TestCase):
         self.membership.refresh_from_db()
         self.assertEqual(self.membership.plan, TenantMembership.Plan.PREMIUM)
         self.assertEqual(self.membership.renewal_date, end)
-        self.assertEqual(self.membership.period_number, 1)
+        self.assertEqual(self.membership.period_number, 4)
 
     def test_admin_starts_trial_when_trial_plan_is_selected(self):
         start = timezone.localdate()
@@ -81,6 +82,7 @@ class TenantMembershipAdminTests(TestCase):
         response = self.client.post(reverse('admin:tenants_tenantmembership_add'), {
             'tenant': str(self.tenant.pk),
             'plan': TenantMembership.Plan.TRIAL,
+            'period_number': '1',
             'premium_started_at': start.isoformat(),
             'renewal_date': '',
             '_save': 'Kaydet',
@@ -96,6 +98,7 @@ class TenantMembershipAdminTests(TestCase):
         response = self.client.post(self.url, {
             'tenant': str(self.tenant.pk),
             'plan': TenantMembership.Plan.TRIAL,
+            'period_number': str(self.membership.period_number),
             'premium_started_at': start.isoformat(),
             'renewal_date': (start - timedelta(days=1)).isoformat(),
             '_save': 'Kaydet',
@@ -111,6 +114,7 @@ class TenantMembershipAdminTests(TestCase):
         response = self.client.post(self.url, {
             'tenant': str(other_tenant.pk),
             'plan': self.membership.plan,
+            'period_number': str(self.membership.period_number),
             'premium_started_at': self.membership.premium_started_at.isoformat(),
             'renewal_date': self.membership.renewal_date.isoformat(),
             '_save': 'Kaydet',
