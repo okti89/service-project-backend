@@ -173,6 +173,7 @@ class Service(models.Model):
     customer_full_name = models.CharField(max_length=200, blank=True, null=True, verbose_name='Müşteri Adı Soyadı')
     customer_address = models.TextField(verbose_name='Müşteri Adresi', blank=True, null=True)
     fault_description = models.TextField(verbose_name='Arıza Açıklaması', blank=True, null=True)
+    legacy_data = models.JSONField(default=dict, blank=True, editable=False)
     # CharField yapısı kullanıcı talebiyle korunuyor.
     device_type = models.ForeignKey(DeviceType, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Cihaz Türü')
     device_brand = models.ForeignKey(Brand, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Cihaz Markası')
@@ -480,6 +481,7 @@ class WarrantyCertificate(models.Model):
 
 class ServiceOperations(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    legacy_data = models.JSONField(default=dict, blank=True, editable=False)
     tenant = models.ForeignKey('tenants.Tenant', on_delete=models.CASCADE, related_name='service_operations_list', null=True, blank=True)
     service = models.ForeignKey(Service, on_delete=models.CASCADE, related_name='items', verbose_name='Servis')
     name = models.CharField(max_length=255, null=True, blank=True, verbose_name='İşlem Adı')
