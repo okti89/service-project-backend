@@ -7,6 +7,7 @@ from tempfile import TemporaryDirectory
 
 from django.contrib.auth.hashers import make_password
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.test import TestCase
 
 from accounts.models import User
@@ -110,6 +111,11 @@ class ErkmenSqliteImportTests(TestCase):
         self.assertEqual(payload['excluded_users'], ['skip@example.com'])
         call_command('import_erkmen_json', str(prepared), '--commit', verbosity=0)
         self.assertEqual(User.objects.filter(tenant__code='erkmen-teknik').count(), 1)
+
+    def test_missing_json_reports_source_path(self):
+        missing = Path(self.temp_dir.name) / 'missing.json'
+        with self.assertRaisesMessage(CommandError, f'Kaynak dosya bulunamadi: {missing}'):
+            call_command('import_erkmen_json', str(missing), verbosity=0)
 
     def test_commit_maps_data_and_is_idempotent(self):
         call_command('import_erkmen_sqlite', str(self.source), '--commit', verbosity=0)

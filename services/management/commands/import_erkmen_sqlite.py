@@ -106,7 +106,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         source = Path(options['source']).expanduser().resolve()
         if not source.is_file():
-            raise CommandError(f'SQLite yedegi bulunamadi: {source}')
+            raise CommandError(f'Kaynak dosya bulunamadi: {source}')
         target = settings.DATABASES['default'].get('NAME')
         if target and Path(str(target)).exists() and source.samefile(target):
             raise CommandError('Kaynak ve hedef veritabani ayni dosya olamaz.')
