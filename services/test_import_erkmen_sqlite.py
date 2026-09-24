@@ -1,4 +1,5 @@
 import sqlite3
+import json
 import uuid
 from contextlib import closing
 from pathlib import Path
@@ -12,7 +13,10 @@ from accounts.models import User
 from customers.models import Customer
 from products.models import Product
 from services.models import Service, ServiceOperations
+from services.serializers import ServiceSerializer
 from tenants.models import Tenant
+from tools.export_legacy_sqlite_json import export
+from tools.prepare_erkmen_import_json import prepare
 
 
 class ErkmenSqliteImportTests(TestCase):
@@ -68,6 +72,45 @@ class ErkmenSqliteImportTests(TestCase):
         self.assertFalse(Tenant.objects.filter(code='erkmen-teknik').exists())
         self.assertFalse(Service.objects.filter(pk=self.service_id).exists())
 
+    def test_json_export_and_import_preserve_unicode(self):
+        with closing(sqlite3.connect(self.source)) as connection, connection:
+            connection.execute(
+                'UPDATE services_service SET full_name = ? WHERE id = ?',
+                ('Ayşe Yılmaz', self.service_id),
+            )
+        snapshot = Path(self.temp_dir.name) / 'erkmen.json'
+        counts = export(self.source, snapshot)
+        self.assertEqual(counts['services_service'], 1)
+        payload = json.loads(snapshot.read_text(encoding='utf-8'))
+        self.assertEqual(payload['tables']['services_service']['rows'][0]['full_name'], 'Ayşe Yılmaz')
+
+        call_command('import_erkmen_json', str(snapshot), verbosity=0)
+        self.assertFalse(Tenant.objects.filter(code='erkmen-teknik').exists())
+        call_command('import_erkmen_json', str(snapshot), '--commit', verbosity=0)
+        self.assertEqual(Service.objects.get(pk=self.service_id).customer_full_name, 'Ayşe Yılmaz')
+
+    def test_prepared_json_excludes_tokens_and_skipped_user(self):
+        with closing(sqlite3.connect(self.source)) as connection, connection:
+            connection.execute('CREATE TABLE authtoken_token (key TEXT)')
+            connection.execute('INSERT INTO authtoken_token VALUES (?)', ('secret-token',))
+            connection.execute(
+                'INSERT INTO users VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                (str(uuid.uuid4()), 'skip@example.com', make_password('SkippedPassword123!'),
+                 'Skip', 'User', 1, 1, 1),
+            )
+        full = Path(self.temp_dir.name) / 'full.json'
+        prepared = Path(self.temp_dir.name) / 'prepared.json'
+        export(self.source, full)
+        counts = prepare(full, prepared, ['skip@example.com'])
+        self.assertEqual(counts['users'], 1)
+        payload = json.loads(prepared.read_text(encoding='utf-8'))
+        self.assertEqual(len(payload['tables']), 4)
+        self.assertNotIn('authtoken_token', payload['tables'])
+        self.assertNotIn('secret-token', prepared.read_text(encoding='utf-8'))
+        self.assertEqual(payload['excluded_users'], ['skip@example.com'])
+        call_command('import_erkmen_json', str(prepared), '--commit', verbosity=0)
+        self.assertEqual(User.objects.filter(tenant__code='erkmen-teknik').count(), 1)
+
     def test_commit_maps_data_and_is_idempotent(self):
         call_command('import_erkmen_sqlite', str(self.source), '--commit', verbosity=0)
         tenant = Tenant.objects.get(code='erkmen-teknik')
@@ -78,6 +121,11 @@ class ErkmenSqliteImportTests(TestCase):
         self.assertEqual(service.device_type.name, 'Kombi')
         self.assertEqual(service.legacy_data['record']['custom_note'], 'Ozel not')
         self.assertEqual(service.legacy_data['record']['garanty'], '2 yil')
+        details = ServiceSerializer(service).data
+        self.assertEqual(details['historical_warranty'], '2 yil')
+        self.assertEqual(details['historical_technician_notes'], 'Teknisyen notu')
+        self.assertEqual(details['historical_custom_note'], 'Ozel not')
+        self.assertNotIn('legacy_data', details)
         self.assertEqual(Customer.objects.filter(tenant=tenant).count(), 1)
         self.assertEqual(Product.objects.get(tenant=tenant).stock_quantity, 5)
         self.assertEqual(ServiceOperations.objects.get(service=service).unit_price, 300)

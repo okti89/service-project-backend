@@ -345,6 +345,9 @@ class ServiceSerializer(serializers.ModelSerializer):
     remaining_balance = serializers.SerializerMethodField()
     status_name = serializers.SerializerMethodField()
     status_color = serializers.SerializerMethodField()
+    historical_warranty = serializers.SerializerMethodField()
+    historical_technician_notes = serializers.SerializerMethodField()
+    historical_custom_note = serializers.SerializerMethodField()
     class Meta:
         model = Service
         fields = [
@@ -352,12 +355,28 @@ class ServiceSerializer(serializers.ModelSerializer):
             'fault_description', 'device_type', 'device_type_name', 'device_brand', 'device_brand_name',
             'device_model', 'device_model_name', 'technician', 'technician_name',
             'service_status', 'status_name', 'status_color', 'receipt_number',
+            'historical_warranty', 'historical_technician_notes', 'historical_custom_note',
             'scheduled_date', 'technician_avatar',
             'created_at', 'updated_at',
             'items', 'payments', 'photos', 'timeline', 'warranty_certificate', 'signatures',
             'total_price', 'total_paid', 'remaining_balance'
         ]
         read_only_fields = ['id', 'receipt_number', 'created_at', 'updated_at']
+
+    def _historical_field(self, obj, field):
+        legacy = obj.legacy_data or {}
+        if legacy.get('source') != 'erkmen-sqlite':
+            return None
+        return str((legacy.get('record') or {}).get(field) or '').strip() or None
+
+    def get_historical_warranty(self, obj):
+        return self._historical_field(obj, 'garanty')
+
+    def get_historical_technician_notes(self, obj):
+        return self._historical_field(obj, 'technician_notes')
+
+    def get_historical_custom_note(self, obj):
+        return self._historical_field(obj, 'custom_note')
 
     def get_technician_avatar(self, obj):
         avatar = getattr(getattr(getattr(obj, 'technician', None), 'user', None), 'avatar', None)

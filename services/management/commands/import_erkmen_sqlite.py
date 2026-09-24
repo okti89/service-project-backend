@@ -1,4 +1,5 @@
 import sqlite3
+import json
 import uuid
 from collections import Counter
 from contextlib import closing
@@ -56,6 +57,7 @@ REQUIRED_COLUMNS = {
     'services_process': {'id', 'service_id', 'name', 'price', 'quantity'},
     'services_sparepart': {'id', 'name', 'price', 'stock'},
 }
+JSON_FORMAT = 'erkmen-legacy-sqlite-v1'
 
 
 def stable_id(tenant_code, kind, source_id):
@@ -88,7 +90,7 @@ class Command(BaseCommand):
     help = 'Erkmen eski Django SQLite verisini tenant altina aktarir; varsayilan mod dry-run.'
 
     def add_arguments(self, parser):
-        parser.add_argument('source', help='PythonAnywhere uzerinden alinmis guncel db.sqlite3 yedegi')
+        parser.add_argument('source', help='PythonAnywhere kaynakli db.sqlite3 veya tum tablolari iceren JSON')
         parser.add_argument('--tenant-code', default='erkmen-teknik')
         parser.add_argument('--expected-tenant-id', help='Var olan tenant UUID dogrulamasi')
         parser.add_argument(
@@ -125,16 +127,19 @@ class Command(BaseCommand):
                 raise CommandError('Tekrarlanan e-posta eslestirmesi var.')
             self.email_aliases[original] = replacement
         self.stats = Counter()
-        try:
-            with closing(sqlite3.connect(f'{source.as_uri()}?mode=ro', uri=True)) as connection:
-                connection.row_factory = sqlite3.Row
-                self._validate_source(connection)
-                self.rows = {
-                    table: [dict(row) for row in connection.execute(f'SELECT * FROM {table}')]
-                    for table in REQUIRED_COLUMNS
-                }
-        except sqlite3.DatabaseError as exc:
-            raise CommandError(f'SQLite yedegi okunamadi: {exc}') from exc
+        if source.suffix.lower() == '.json':
+            self.rows = self._read_json(source)
+        else:
+            try:
+                with closing(sqlite3.connect(f'{source.as_uri()}?mode=ro', uri=True)) as connection:
+                    connection.row_factory = sqlite3.Row
+                    self._validate_source(connection)
+                    self.rows = {
+                        table: [dict(row) for row in connection.execute(f'SELECT * FROM {table}')]
+                        for table in REQUIRED_COLUMNS
+                    }
+            except sqlite3.DatabaseError as exc:
+                raise CommandError(f'SQLite yedegi okunamadi: {exc}') from exc
 
         with transaction.atomic():
             self._resolve_tenant(options.get('expected_tenant_id'))
@@ -159,6 +164,34 @@ class Command(BaseCommand):
             missing = columns - available
             if missing:
                 raise CommandError(f'{table} tablosunda alan eksik: {", ".join(sorted(missing))}')
+
+    def _read_json(self, source):
+        try:
+            with source.open('r', encoding='utf-8') as stream:
+                payload = json.load(stream)
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise CommandError(f'JSON okunamadi: {exc}') from exc
+        if not isinstance(payload, dict) or payload.get('format') != JSON_FORMAT:
+            raise CommandError('JSON bicimi beklenen Erkmen SQLite disa aktarimi degil.')
+        tables = payload.get('tables')
+        if not isinstance(tables, dict):
+            raise CommandError('JSON tablo listesi eksik.')
+        rows = {}
+        for table, required in REQUIRED_COLUMNS.items():
+            entry = tables.get(table)
+            if not isinstance(entry, dict):
+                raise CommandError(f'JSON tablosu eksik: {table}')
+            columns = entry.get('columns')
+            items = entry.get('rows')
+            if not isinstance(columns, list) or not isinstance(items, list):
+                raise CommandError(f'JSON tablosu gecersiz: {table}')
+            missing = required - set(columns)
+            if missing:
+                raise CommandError(f'{table} tablosunda alan eksik: {", ".join(sorted(missing))}')
+            if any(not isinstance(item, dict) or not required.issubset(item) for item in items):
+                raise CommandError(f'{table} tablosunda eksik veya gecersiz satir var.')
+            rows[table] = items
+        return rows
 
     def _resolve_tenant(self, expected_id):
         self.tenant = Tenant.objects.filter(code=self.tenant_code).first()
