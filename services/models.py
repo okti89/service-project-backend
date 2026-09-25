@@ -173,6 +173,7 @@ class Service(models.Model):
     customer_full_name = models.CharField(max_length=200, blank=True, null=True, verbose_name='Müşteri Adı Soyadı')
     customer_address = models.TextField(verbose_name='Müşteri Adresi', blank=True, null=True)
     fault_description = models.TextField(verbose_name='Arıza Açıklaması', blank=True, null=True)
+    description = models.TextField(verbose_name='Servis Açıklaması', blank=True, default='')
     legacy_data = models.JSONField(default=dict, blank=True, editable=False)
     # CharField yapısı kullanıcı talebiyle korunuyor.
     device_type = models.ForeignKey(DeviceType, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Cihaz Türü')

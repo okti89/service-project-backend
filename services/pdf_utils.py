@@ -392,7 +392,7 @@ def generate_service_form_pdf(service):
     elements.append(_divider(usable_width))
 
     elements.append(Paragraph('AÇIKLAMA', section_style))
-    description = service.fault_description or 'Servis aciklamasi girilmedi.'
+    description = service.description or '-'
     elements.append(Paragraph(_text(description), section_body_style))
     elements.append(Spacer(1, 2))
     elements.append(Paragraph('ADRES', section_style))

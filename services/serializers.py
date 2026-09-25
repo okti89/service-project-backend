@@ -352,7 +352,7 @@ class ServiceSerializer(serializers.ModelSerializer):
         model = Service
         fields = [
             'id', 'customer', 'customer_phone', 'customer_full_name', 'customer_address',
-            'fault_description', 'device_type', 'device_type_name', 'device_brand', 'device_brand_name',
+            'fault_description', 'description', 'device_type', 'device_type_name', 'device_brand', 'device_brand_name',
             'device_model', 'device_model_name', 'technician', 'technician_name',
             'service_status', 'status_name', 'status_color', 'receipt_number',
             'historical_warranty', 'historical_technician_notes', 'historical_custom_note',

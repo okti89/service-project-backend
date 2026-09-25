@@ -1,11 +1,13 @@
 from datetime import datetime, time, timedelta
 from decimal import Decimal
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 from django.test import RequestFactory, TestCase
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
+from reportlab.platypus import Paragraph
 
 from accounts.models import User
 from customers.models import Customer
@@ -20,6 +22,7 @@ from .operational_alerts import send_operational_alerts
 from accounting.models import Transaction
 
 from .models import PaymentMethod, Service, ServiceOperations, ServicePayment, WarrantyCertificate
+from .pdf_utils import generate_service_form_pdf
 from .serializers import PublicServiceSerializer, ServiceSerializer, WarrantyCertificateSerializer
 from .views import (
     _build_public_service_tracking_url,
@@ -107,12 +110,83 @@ class ServiceSerializerRegressionTests(TestCase):
         self.assertFalse(self.customer.is_deleted)
 
     def test_public_service_serializer_uses_existing_fields_only(self):
+        self.service.description = 'Internal service note'
+        self.service.save(update_fields=['description'])
         data = PublicServiceSerializer(self.service).data
 
         self.assertEqual(data["receipt_number"], self.service.receipt_number)
         self.assertEqual(data["status_name"], "Yeni")
         self.assertNotIn("technician_status", data)
         self.assertNotIn("technician_status_updated_at", data)
+        self.assertNotIn('description', data)
+
+    def test_service_pdf_prints_fault_description_once(self):
+        self.service.description = 'Replaced thermostat and tested heating'
+        self.service.save(update_fields=['description'])
+        rendered_text = []
+
+        def capture_paragraph(value, style):
+            rendered_text.append(value)
+            return Paragraph(value, style)
+
+        with patch('services.pdf_utils.Paragraph', side_effect=capture_paragraph):
+            pdf = generate_service_form_pdf(self.service)
+
+        self.assertTrue(pdf.getvalue().startswith(b'%PDF'))
+        self.assertEqual(sum('No heat' in value for value in rendered_text), 1)
+        self.assertIn('AÇIKLAMA', rendered_text)
+        self.assertEqual(sum('Replaced thermostat' in value for value in rendered_text), 1)
+
+    def test_service_pdf_uses_dash_for_empty_description(self):
+        rendered_text = []
+
+        def capture_paragraph(value, style):
+            rendered_text.append(value)
+            return Paragraph(value, style)
+
+        with patch('services.pdf_utils.Paragraph', side_effect=capture_paragraph):
+            generate_service_form_pdf(self.service)
+
+        description_index = rendered_text.index('AÇIKLAMA')
+        self.assertEqual(rendered_text[description_index + 1], '-')
+
+    def test_service_description_is_saved_and_can_be_cleared(self):
+        service = self.create_service_from_customer_fields(description='Replaced thermostat')
+        self.assertEqual(ServiceSerializer(service).data['description'], 'Replaced thermostat')
+
+        request = self.factory.patch(f'/api/services/admin-services/{service.id}/')
+        request.user = self.user
+        serializer = ServiceSerializer(
+            service, data={'description': ''}, partial=True, context={'request': request},
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        serializer.save()
+        service.refresh_from_db()
+        self.assertEqual(service.description, '')
+
+    def test_service_description_round_trips_through_admin_api(self):
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        url = reverse('admin-service-list-create')
+        response = client.post(url, {
+            'customer': str(self.customer.id),
+            'fault_description': 'No heat',
+            'description': 'Thermostat replaced',
+            'scheduled_date': (timezone.now() + timedelta(days=2)).isoformat(),
+        }, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data['fault_description'], 'No heat')
+        self.assertEqual(response.data['description'], 'Thermostat replaced')
+
+        detail_url = reverse('admin-service-retrieve-update-destroy', args=[response.data['id']])
+        response = client.patch(detail_url, {'description': ''}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['description'], '')
+
+        response = client.get(detail_url)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['fault_description'], 'No heat')
+        self.assertEqual(response.data['description'], '')
 
     def test_service_operation_rejects_other_tenant_service_and_product(self):
         other_tenant = Tenant.objects.create(name="Other operations", code="other-operations")
