@@ -481,6 +481,9 @@ class ServiceSerializer(serializers.ModelSerializer):
         return total
 
     def get_total_paid(self, obj):
+        payments = getattr(obj, '_prefetched_objects_cache', {}).get('payments')
+        if payments is not None:
+            return sum((Decimal(str(payment.amount or 0)) for payment in payments), Decimal('0.00'))
         return Decimal(str(obj.payments.aggregate(total=Sum('amount')).get('total') or 0))
 
     def get_remaining_balance(self, obj):

@@ -123,3 +123,83 @@ class CustomerApiTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+
+
+class CustomerPaginationTests(TestCase):
+    def setUp(self):
+        CustomerApiTests.setUp(self)
+        Customer.objects.bulk_create([
+            Customer(
+                tenant=self.tenant,
+                full_name=f'Customer {index:03d}',
+                phone_number=f'0555000{index:04d}',
+                is_deleted=index >= 110,
+            ) for index in range(120)
+        ])
+
+    def get_page(self, **params):
+        response = self.client.get('/api/customers/customers/', {'page': 1, 'status': 'all', **params})
+        self.assertEqual(response.status_code, 200, response.data)
+        return response.data
+
+    def test_default_page_size_and_summary_cover_all_records(self):
+        data = self.get_page()
+        self.assertEqual(len(data['results']), 50)
+        self.assertEqual(data['count'], 121)
+        self.assertEqual(data['summary'], {'total': 121, 'active': 111, 'inactive': 10})
+        self.assertIsNotNone(data['next'])
+
+    def test_pages_are_ordered_and_have_no_duplicate_records(self):
+        pages = [self.get_page(page=number) for number in (1, 2, 3)]
+        rows = [row for page in pages for row in page['results']]
+        self.assertEqual(len(rows), 121)
+        self.assertEqual(len({row['id'] for row in rows}), 121)
+        self.assertEqual([row['full_name'] for row in rows], sorted(row['full_name'] for row in rows))
+        self.assertIsNone(pages[-1]['next'])
+
+    def test_search_finds_records_not_in_the_first_page(self):
+        data = self.get_page(search='Customer 119')
+        self.assertEqual(data['count'], 1)
+        self.assertEqual(data['results'][0]['full_name'], 'Customer 119')
+        self.assertEqual(data['summary'], {'total': 1, 'active': 0, 'inactive': 1})
+
+    def test_digits_in_customer_names_do_not_trigger_phone_search(self):
+        self.assertEqual(self.get_page(search='Customer 00')['count'], 10)
+
+    def test_status_filter_does_not_reduce_summary_to_one_page(self):
+        active = self.get_page(status='active')
+        inactive = self.get_page(status='inactive')
+        self.assertEqual(active['count'], 111)
+        self.assertTrue(all(not row['is_deleted'] for row in active['results']))
+        self.assertEqual(inactive['count'], 10)
+        self.assertTrue(all(row['is_deleted'] for row in inactive['results']))
+        self.assertEqual(active['summary'], inactive['summary'])
+
+    def test_page_size_is_bounded(self):
+        self.assertEqual(len(self.get_page(page_size=1000)['results']), 100)
+        self.assertEqual(len(self.get_page(page_size=20)['results']), 20)
+
+    def test_paginated_results_never_include_other_tenants(self):
+        data = self.get_page(search='Alan Turing')
+        self.assertEqual(data['count'], 0)
+        self.assertEqual(data['results'], [])
+        self.assertEqual(data['summary']['total'], 0)
+
+    def test_phone_search_accepts_formatted_international_number(self):
+        data = self.get_page(search='+90 555 000 00 01')
+        self.assertTrue(any(row['id'] == str(self.customer.id) for row in data['results']))
+
+    def test_note_and_email_are_searched_on_the_server(self):
+        self.customer.note = 'Searchable repair note'
+        self.customer.save(update_fields=['note'])
+        for search in ('repair note', 'grace@example.com'):
+            with self.subTest(search=search):
+                data = self.get_page(search=search)
+                self.assertEqual(data['count'], 1)
+                self.assertEqual(data['results'][0]['id'], str(self.customer.id))
+
+    def test_legacy_mobile_response_remains_an_unpaginated_list(self):
+        response = self.client.get('/api/customers/customer-list/?status=all')
+        self.assertEqual(response.status_code, 200)
+        self.assertIsInstance(response.data, list)
+        self.assertEqual(len(response.data), 111)

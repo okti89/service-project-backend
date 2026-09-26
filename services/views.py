@@ -121,6 +121,17 @@ def _service_tenant_queryset(request):
     return Service.objects.filter(tenant=tenant)
 
 
+def _service_read_queryset(request):
+    return _service_tenant_queryset(request).select_related(
+        'customer', 'technician__user', 'status',
+        'device_type', 'device_brand', 'device_model', 'warranty_certificate',
+    ).prefetch_related(
+        Prefetch('items', queryset=ServiceOperations.objects.select_related('product')),
+        Prefetch('payments', queryset=ServicePayment.objects.select_related('payment_method')),
+        'photos', 'timeline', 'signatures',
+    )
+
+
 def _status_label(value):
     if isinstance(value, ServiceStatus):
         return value.name
@@ -939,11 +950,7 @@ class TechnicianServiceListCreateView(APIView):
     def get_queryset(self, request):
         user = request.user
 
-        qs = _service_tenant_queryset(request).select_related(
-            'customer', 'technician', 'technician__user'
-        ).prefetch_related(
-            'items', 'payments', 'photos', 'timeline'
-        )
+        qs = _service_read_queryset(request)
 
       
         qs = qs.filter(technician__user=user, tenant=_request_tenant(request))
@@ -1008,11 +1015,7 @@ class TechnicianServiceRetrieveUpdateDestroyView(APIView):
     def get_queryset(self, request):
         user = request.user
 
-        qs = _service_tenant_queryset(request).select_related(
-            'customer', 'technician', 'technician__user'
-        ).prefetch_related(
-            'items', 'payments', 'photos', 'timeline'
-        )
+        qs = _service_read_queryset(request)
 
         if user.user_type == 'admin' or user.is_staff:
             pass
@@ -1078,11 +1081,7 @@ class AdminServiceListCreateView(APIView):
     def get_queryset(self, request):
         user = request.user
 
-        qs = _service_tenant_queryset(request).select_related(
-            'customer', 'technician', 'technician__user'
-        ).prefetch_related(
-            'items', 'payments', 'photos', 'timeline'
-        )
+        qs = _service_read_queryset(request)
 
         # 🔐 yetki
         qs = qs.all()
@@ -1249,11 +1248,7 @@ class AdminServiceRetrieveUpdateDestroyView(APIView):
     def get_queryset(self, request):
         user = request.user
 
-        qs = _service_tenant_queryset(request).select_related(
-            'customer', 'technician', 'technician__user'
-        ).prefetch_related(
-            'items', 'payments', 'photos', 'timeline'
-        )
+        qs = _service_read_queryset(request)
         qs = qs.all()
         return qs.order_by("-scheduled_date")
     

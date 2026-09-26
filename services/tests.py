@@ -4,6 +4,8 @@ from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 from django.test import RequestFactory, TestCase
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -25,6 +27,7 @@ from .models import PaymentMethod, Service, ServiceOperations, ServicePayment, W
 from .pdf_utils import generate_service_form_pdf
 from .serializers import PublicServiceSerializer, ServiceSerializer, WarrantyCertificateSerializer
 from .views import (
+    AdminServiceListCreateView,
     _build_public_service_tracking_url,
     _build_service_pdf_filename,
     _build_service_status_whatsapp_url,
@@ -187,6 +190,91 @@ class ServiceSerializerRegressionTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data['fault_description'], 'No heat')
         self.assertEqual(response.data['description'], '')
+
+    def test_service_list_query_count_does_not_grow_per_service(self):
+        rows = Service.objects.bulk_create([
+            Service(
+                tenant=self.tenant,
+                customer=self.customer,
+                customer_full_name=self.customer.full_name,
+                technician=self.technician,
+                status=self.service.status,
+                scheduled_date=timezone.now(),
+            ) for _ in range(20)
+        ])
+        method = PaymentMethod.objects.create(tenant=self.tenant, name='Cash')
+        ServiceOperations.objects.bulk_create([
+            ServiceOperations(tenant=self.tenant, service=row, name='Repair', quantity=2, unit_price=100)
+            for row in rows
+        ])
+        ServicePayment.objects.bulk_create([
+            ServicePayment(tenant=self.tenant, service=row, payment_method=method, amount=amount)
+            for row in rows for amount in (10, 20)
+        ])
+        request = self.factory.get('/api/services/admin-services/')
+        request.user = self.user
+        request.query_params = {}
+        view = AdminServiceListCreateView()
+
+        with CaptureQueriesContext(connection) as single_queries:
+            ServiceSerializer(view.get_queryset(request).filter(pk=rows[0].pk), many=True).data
+        with CaptureQueriesContext(connection) as list_queries:
+            data = ServiceSerializer(
+                view.get_queryset(request).filter(pk__in=[row.pk for row in rows]), many=True,
+            ).data
+
+        self.assertEqual(len(list_queries), len(single_queries))
+        self.assertEqual(len(list_queries), 6)
+        self.assertEqual(len(data), 20)
+        for row in data:
+            self.assertEqual(row['total_price'], Decimal('200'))
+            self.assertEqual(row['total_paid'], Decimal('30'))
+            self.assertEqual(row['remaining_balance'], Decimal('170'))
+
+    def test_service_list_filters_dates_before_serializing(self):
+        Service.objects.filter(pk=self.service.pk).update(
+            scheduled_date=timezone.make_aware(datetime(2025, 1, 1)),
+        )
+        dates = [
+            datetime(2026, 9, 20, 23, 59),
+            datetime(2026, 9, 21),
+            datetime(2026, 9, 27),
+            datetime(2026, 9, 27, 23, 59),
+            datetime(2026, 9, 28),
+            datetime(2026, 10, 1),
+            datetime(2027, 1, 1),
+        ]
+        rows = Service.objects.bulk_create([
+            Service(
+                tenant=self.tenant,
+                customer=self.customer,
+                status=self.service.status,
+                scheduled_date=timezone.make_aware(date),
+            ) for date in dates
+        ])
+        other_tenant = Tenant.objects.create(name='Other date tenant', code='other-service-dates')
+        Service.objects.create(
+            tenant=other_tenant,
+            scheduled_date=timezone.make_aware(datetime(2026, 9, 27)),
+        )
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        ranges = [
+            ('2026-09-27', '2026-09-27', [2, 3]),
+            ('2026-09-21', '2026-09-27', [1, 2, 3]),
+            ('2026-09-01', '2026-09-30', [0, 1, 2, 3, 4]),
+            ('2026-01-01', '2026-12-31', [0, 1, 2, 3, 4, 5]),
+        ]
+        for start, end, indices in ranges:
+            with self.subTest(start=start, end=end):
+                response = client.get(reverse('admin-service-list-create'), {
+                    'start_date': start, 'end_date': end,
+                })
+                self.assertEqual(response.status_code, 200, response.data)
+                self.assertEqual(
+                    {str(row['id']) for row in response.data},
+                    {str(rows[index].pk) for index in indices},
+                )
 
     def test_service_operation_rejects_other_tenant_service_and_product(self):
         other_tenant = Tenant.objects.create(name="Other operations", code="other-operations")
