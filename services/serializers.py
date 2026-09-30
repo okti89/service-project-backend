@@ -328,6 +328,7 @@ class PublicServiceSerializer(serializers.ModelSerializer):
 # === Primary Service Serializer ===
 class ServiceSerializer(serializers.ModelSerializer):
     service_status = serializers.CharField(required=False)
+    warranty_months = serializers.IntegerField(required=False, allow_null=True, min_value=1, max_value=120)
     device_type_name = serializers.CharField(source='device_type', read_only=True)
     device_brand_name = serializers.CharField(source='device_brand', read_only=True)
     device_model_name = serializers.CharField(source='device_model', read_only=True)
@@ -352,7 +353,7 @@ class ServiceSerializer(serializers.ModelSerializer):
         model = Service
         fields = [
             'id', 'customer', 'customer_phone', 'customer_full_name', 'customer_address',
-            'fault_description', 'description', 'device_type', 'device_type_name', 'device_brand', 'device_brand_name',
+            'fault_description', 'description', 'warranty_months', 'device_type', 'device_type_name', 'device_brand', 'device_brand_name',
             'device_model', 'device_model_name', 'technician', 'technician_name',
             'service_status', 'status_name', 'status_color', 'receipt_number',
             'historical_warranty', 'historical_technician_notes', 'historical_custom_note',
@@ -465,13 +466,20 @@ class ServiceSerializer(serializers.ModelSerializer):
         instance.save()
         return instance
 
+    @transaction.atomic
     def update(self, instance, validated_data):
         status_code = validated_data.pop('service_status', None)
+        warranty_changed = 'warranty_months' in validated_data
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         if status_code is not None:
             instance.service_status = status_code
         instance.save()
+        if warranty_changed and instance.warranty_months is not None:
+            certificate = WarrantyCertificate.objects.filter(service=instance).first()
+            if certificate and certificate.warranty_months != instance.warranty_months:
+                certificate.warranty_months = instance.warranty_months
+                certificate.save()
         return instance
 
     def get_total_price(self, obj):

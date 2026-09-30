@@ -1334,11 +1334,13 @@ class ServiceWarrantyPDFView(APIView):
             pk=pk,
         )
         
-        months = request.query_params.get('months')
+        requested_months = request.query_params.get('months')
         try:
-            months = int(months) if months else 24
-        except ValueError:
-            months = 24
+            months = int(requested_months) if requested_months else (service.warranty_months or 12)
+        except (TypeError, ValueError):
+            return Response({'months': 'Garanti süresi geçerli bir ay sayısı olmalı.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not 1 <= months <= 120:
+            return Response({'months': 'Garanti süresi 1 ile 120 ay arasında olmalı.'}, status=status.HTTP_400_BAD_REQUEST)
             
         warranty, created = WarrantyCertificate.objects.get_or_create(
             service=service,
@@ -1348,9 +1350,12 @@ class ServiceWarrantyPDFView(APIView):
             }
         )
         
-        if not created and request.query_params.get('months'):
+        if not created and warranty.warranty_months != months:
             warranty.warranty_months = months
             warranty.save()
+        if service.warranty_months != months:
+            Service.objects.filter(pk=service.pk).update(warranty_months=months)
+            service.warranty_months = months
 
         pdf_buffer = generate_warranty_certificate_pdf(warranty)
         filename = f"Garanti_Belgesi_{service.receipt_number or str(service.id)[:8]}.pdf"

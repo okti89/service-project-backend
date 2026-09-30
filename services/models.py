@@ -174,6 +174,7 @@ class Service(models.Model):
     customer_address = models.TextField(verbose_name='Müşteri Adresi', blank=True, null=True)
     fault_description = models.TextField(verbose_name='Arıza Açıklaması', blank=True, null=True)
     description = models.TextField(verbose_name='Servis Açıklaması', blank=True, default='')
+    warranty_months = models.PositiveSmallIntegerField(verbose_name='Garanti Süresi (Ay)', blank=True, null=True)
     legacy_data = models.JSONField(default=dict, blank=True, editable=False)
     # CharField yapısı kullanıcı talebiyle korunuyor.
     device_type = models.ForeignKey(DeviceType, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Cihaz Türü')
@@ -396,7 +397,7 @@ class WarrantyCertificate(models.Model):
         verbose_name='Servis',
     )
     certificate_no = models.CharField(max_length=24, unique=True, editable=False, verbose_name='Belge No')
-    warranty_months = models.PositiveIntegerField(default=24, verbose_name='Garanti Süresi (Ay)')
+    warranty_months = models.PositiveIntegerField(default=12, verbose_name='Garanti Süresi (Ay)')
     DEFAULT_COVERAGE_DETAILS = (
         "Garanti Şartları:\n"
         "• Bu belge, servis kapsamında yapılan işçilik ve/veya değiştirilen parçalar için geçerlidir.\n"
@@ -456,6 +457,8 @@ class WarrantyCertificate(models.Model):
         return 'WRN-' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
 
     def save(self, *args, **kwargs):
+        previous_months = None if self._state.adding else WarrantyCertificate.objects.filter(pk=self.pk).values_list('warranty_months', flat=True).first()
+        was_new = self._state.adding
         self.tenant = self.service.tenant
         if not self.certificate_no:
             max_retry = 8
@@ -479,6 +482,8 @@ class WarrantyCertificate(models.Model):
             self.status = 'expired' if self.end_date < timezone.localdate() else 'active'
 
         super().save(*args, **kwargs)
+        if was_new or previous_months != self.warranty_months:
+            Service.objects.filter(pk=self.service_id).update(warranty_months=self.warranty_months)
 
 class ServiceOperations(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
