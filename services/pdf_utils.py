@@ -272,7 +272,8 @@ def generate_service_form_pdf(service):
     usable_width = RECEIPT_WIDTH - (RECEIPT_MARGIN * 2)
     item_count = max(service.items.count(), 1)
     payment_count = service.payments.count()
-    page_height = max(230 * mm, (185 + item_count * 15 + payment_count * 10) * mm)
+    warranty_months = service.warranty_months
+    page_height = max(230 * mm, (185 + item_count * 15 + payment_count * 10 + (8 if warranty_months else 0)) * mm)
 
     company_style = ParagraphStyle(
         'ReceiptCompany',
@@ -386,6 +387,8 @@ def generate_service_form_pdf(service):
     elements.append(_info_row('Cihaz', f': {_device_type_name(service)}', label_style, value_style, usable_width))
     elements.append(_info_row('Marka', f': {_device_brand_name(service)}', label_style, value_style, usable_width))
     elements.append(_info_row('Model', f': {_device_model_name(service)}', label_style, value_style, usable_width))
+    if warranty_months:
+        elements.append(_info_row('Garanti Süresi', f': {warranty_months} Ay', label_style, value_style, usable_width))
     elements.append(_info_row('Arıza', f': {service.fault_description or "-"}', label_style, value_style, usable_width))
     elements.append(_info_row('Durum', f': {_service_status_label(service)}', label_style, value_style, usable_width))
     elements.append(_info_row('Teknisyen', f': {_technician_name(service)}', label_style, value_style, usable_width))

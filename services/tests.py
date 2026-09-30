@@ -24,7 +24,7 @@ from .operational_alerts import send_operational_alerts
 from accounting.models import Transaction
 
 from .models import PaymentMethod, Service, ServiceOperations, ServicePayment, WarrantyCertificate
-from .pdf_utils import generate_service_form_pdf
+from .pdf_utils import _info_row, generate_service_form_pdf
 from .serializers import PublicServiceSerializer, ServiceSerializer, WarrantyCertificateSerializer
 from .views import (
     AdminServiceListCreateView,
@@ -152,6 +152,84 @@ class ServiceSerializerRegressionTests(TestCase):
 
         description_index = rendered_text.index('AÇIKLAMA')
         self.assertEqual(rendered_text[description_index + 1], '-')
+
+    def test_service_pdf_shows_warranty_duration_only_when_assigned(self):
+        with patch('services.pdf_utils._info_row', wraps=_info_row) as info_row:
+            generate_service_form_pdf(self.service)
+        self.assertNotIn('Garanti Süresi', [call.args[0] for call in info_row.call_args_list])
+
+        WarrantyCertificate.objects.create(
+            tenant=self.tenant,
+            service=self.service,
+            warranty_months=12,
+        )
+        self.service.refresh_from_db()
+        with patch('services.pdf_utils._info_row', wraps=_info_row) as info_row:
+            pdf = generate_service_form_pdf(self.service)
+
+        self.assertTrue(pdf.getvalue().startswith(b'%PDF'))
+        self.assertIn(('Garanti Süresi', ': 12 Ay'), [call.args[:2] for call in info_row.call_args_list])
+
+    def test_warranty_duration_is_saved_without_creating_a_certificate(self):
+        request = self.factory.patch(f'/api/services/admin-services/{self.service.id}/')
+        request.user = self.user
+        serializer = ServiceSerializer(
+            self.service, data={'warranty_months': 18}, partial=True, context={'request': request},
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        serializer.save()
+
+        self.service.refresh_from_db()
+        self.assertEqual(self.service.warranty_months, 18)
+        self.assertFalse(WarrantyCertificate.objects.filter(service=self.service).exists())
+        with patch('services.pdf_utils._info_row', wraps=_info_row) as info_row:
+            generate_service_form_pdf(self.service)
+        self.assertIn(('Garanti Süresi', ': 18 Ay'), [call.args[:2] for call in info_row.call_args_list])
+
+        serializer = ServiceSerializer(
+            self.service, data={'warranty_months': None}, partial=True, context={'request': request},
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        serializer.save()
+        self.service.refresh_from_db()
+        self.assertIsNone(self.service.warranty_months)
+
+    def test_warranty_duration_edit_updates_existing_certificate(self):
+        certificate = WarrantyCertificate.objects.create(service=self.service, warranty_months=24)
+        self.service.refresh_from_db()
+        self.assertEqual(self.service.warranty_months, 24)
+
+        request = self.factory.patch(f'/api/services/admin-services/{self.service.id}/')
+        request.user = self.user
+        serializer = ServiceSerializer(
+            self.service, data={'warranty_months': 12}, partial=True, context={'request': request},
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        serializer.save()
+        certificate.refresh_from_db()
+        self.assertEqual(certificate.warranty_months, 12)
+
+        serializer = ServiceSerializer(
+            self.service, data={'warranty_months': None}, partial=True, context={'request': request},
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        serializer.save()
+        self.service.refresh_from_db()
+        self.assertIsNone(self.service.warranty_months)
+        self.assertTrue(WarrantyCertificate.objects.filter(pk=certificate.pk).exists())
+        certificate.status = 'void'
+        certificate.save()
+        self.service.refresh_from_db()
+        self.assertIsNone(self.service.warranty_months)
+
+    def test_new_warranty_document_defaults_to_twelve_months(self):
+        client = APIClient()
+        client.force_authenticate(user=self.user)
+        response = client.get(reverse('admin-service-warranty-pdf', args=[self.service.id]))
+        self.assertEqual(response.status_code, 200)
+        self.service.refresh_from_db()
+        self.assertEqual(self.service.warranty_months, 12)
+        self.assertEqual(WarrantyCertificate.objects.get(service=self.service).warranty_months, 12)
 
     def test_service_description_is_saved_and_can_be_cleared(self):
         service = self.create_service_from_customer_fields(description='Replaced thermostat')
