@@ -340,13 +340,13 @@ def generate_daily_summary_pdf(data, tenant=None):
     def metric(label, value, background, value_color='#0f2f5f'):
         value_text = str(value)
         value_size = metric_value_style.fontSize
-        if value_text.endswith(' TL'):
-            number = value_text[:-3]
-            value_size = min(value_size, 101 * value_size / max(1, pdfmetrics.stringWidth(number, FONT_BOLD, value_size)))
-            value_text = f'{escape(number)}<br/>TL'
+        # Fit the complete amount, including TL, into the card's padded width.
+        value_width = 119 - 12 - 6 - 1
+        value_size = min(value_size, value_width * value_size / max(1, pdfmetrics.stringWidth(value_text, FONT_BOLD, value_size)))
+        value_text = escape(value_text).replace(' ', '&nbsp;')
         value_style = ParagraphStyle(
             'Metric' + label, parent=metric_value_style, fontSize=value_size,
-            leading=value_size + 4, splitLongWords=False, textColor=colors.HexColor(value_color),
+            leading=metric_value_style.leading, splitLongWords=False, textColor=colors.HexColor(value_color),
         )
         return Table([[Paragraph(label, label_style)], [Paragraph(value_text, value_style)]], colWidths=[119], minRowHeights=[22, 28], style=TableStyle([
             ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor(background)), ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor(background)), ('LEFTPADDING', (0, 0), (-1, -1), 12), ('TOPPADDING', (0, 0), (-1, -1), 8), ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
