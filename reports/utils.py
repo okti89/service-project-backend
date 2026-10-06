@@ -338,7 +338,17 @@ def generate_daily_summary_pdf(data, tenant=None):
     header.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'), ('LINEAFTER', (0, 0), (0, 0), 1, colors.HexColor('#9cb2d0')), ('LEFTPADDING', (0, 0), (-1, -1), 0), ('RIGHTPADDING', (0, 0), (-1, -1), 0)]))
 
     def metric(label, value, background, value_color='#0f2f5f'):
-        return Table([[Paragraph(label, label_style)], [Paragraph(value, ParagraphStyle('Metric' + label, parent=metric_value_style, textColor=colors.HexColor(value_color)))]], colWidths=[119], rowHeights=[22, 28], style=TableStyle([
+        value_text = str(value)
+        value_size = metric_value_style.fontSize
+        if value_text.endswith(' TL'):
+            number = value_text[:-3]
+            value_size = min(value_size, 101 * value_size / max(1, pdfmetrics.stringWidth(number, FONT_BOLD, value_size)))
+            value_text = f'{escape(number)}<br/>TL'
+        value_style = ParagraphStyle(
+            'Metric' + label, parent=metric_value_style, fontSize=value_size,
+            leading=value_size + 4, splitLongWords=False, textColor=colors.HexColor(value_color),
+        )
+        return Table([[Paragraph(label, label_style)], [Paragraph(value_text, value_style)]], colWidths=[119], minRowHeights=[22, 28], style=TableStyle([
             ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor(background)), ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor(background)), ('LEFTPADDING', (0, 0), (-1, -1), 12), ('TOPPADDING', (0, 0), (-1, -1), 8), ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
         ]))
 
@@ -352,23 +362,45 @@ def generate_daily_summary_pdf(data, tenant=None):
     metrics.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'), ('LEFTPADDING', (0, 0), (-1, -1), 0), ('RIGHTPADDING', (0, 0), (-1, -1), 6)]))
     elements.extend([metrics, Paragraph('Servis Hareketleri', section_style)])
 
-    table_rows = [[
+    # Paragraph cells wrap long names, identifiers and notes inside their columns.
+    table_header_style = ParagraphStyle(
+        'DailySummaryTableHeader', parent=label_style, fontSize=7.5, leading=10,
+        textColor=colors.white,
+    )
+    table_body_style = ParagraphStyle(
+        'DailySummaryTableBody', parent=normal_style, fontSize=8, leading=11,
+        splitLongWords=True,
+    )
+    table_amount_style = ParagraphStyle('DailySummaryTableAmount', parent=table_body_style, alignment=2)
+
+    def cell(value, style=table_body_style, amount_width=None):
+        if amount_width:
+            number = str(value).removesuffix(' TL')
+            size = min(style.fontSize, amount_width * style.fontSize / max(1, pdfmetrics.stringWidth(number, style.fontName, style.fontSize)))
+            style = ParagraphStyle('DailySummaryFittedAmount', parent=style, fontSize=size, splitLongWords=False)
+        return Paragraph(escape(str(value)).replace('\n', '<br/>'), style)
+
+    table_rows = [[cell(label, table_header_style) for label in (
         'SERVİS NO', 'MÜŞTERİ', 'İŞLEM', 'TEKNİSYEN', 'ÖDEME', 'TUTAR',
-    ]]
+    )]]
     for row in data['services']:
         table_rows.append([
-            row['receipt_number'] or '-', row['customer_name'] or '-', row['operation_name'] or '-',
-            row['technician_name'] or 'Atanmadı', row['payment_method'] or 'Bekliyor',
-            _format_currency(row['total_amount']),
+            cell(row['receipt_number'] or '-'), cell(row['customer_name'] or '-'),
+            cell(row['operation_name'] or '-'), cell(row['technician_name'] or 'Atanmadı'),
+            cell(row['payment_method'] or 'Bekliyor'),
+            cell(_format_currency(row['total_amount']), table_amount_style, amount_width=57),
         ])
     if len(table_rows) == 1:
-        table_rows.append(['-', 'Bu tarih için servis kaydı bulunmuyor.', '', '', '', _format_currency(0)])
+        table_rows.append([cell(value) for value in (
+            '-', 'Bu tarih için servis kaydı bulunmuyor.', '', '', '', _format_currency(0),
+        )])
     service_table = Table(table_rows, colWidths=[67, 105, 108, 82, 72, 69], repeatRows=1)
     service_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0f2f5f')), ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
         ('FONTNAME', (0, 0), (-1, 0), FONT_BOLD), ('FONTNAME', (0, 1), (-1, -1), FONT_REGULAR),
         ('FONTSIZE', (0, 0), (-1, 0), 7.5), ('FONTSIZE', (0, 1), (-1, -1), 8),
         ('TOPPADDING', (0, 0), (-1, -1), 7), ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor('#fafcff'), colors.white]),
         ('GRID', (0, 0), (-1, -1), 0.35, colors.HexColor('#dbe5ef')), ('ALIGN', (-1, 1), (-1, -1), 'RIGHT'),
     ]))
@@ -384,8 +416,23 @@ def generate_daily_summary_pdf(data, tenant=None):
         ['GELİR ÖZETİ', ''], ['Toplam ciro', _format_currency(data['total_revenue'])],
         ['Tahsil edilen', _format_currency(data['collected_total'])], ['Açık bakiye', _format_currency(data['outstanding_total'])],
     ]
-    left = Table(payment_rows, colWidths=[175, 75])
-    right = Table(revenue_rows, colWidths=[175, 75])
+    def summary_cells(rows, revenue=False):
+        result = []
+        for index, row in enumerate(rows):
+            cells = []
+            for column, value in enumerate(row):
+                style = label_style if index == 0 else (right_style if column == 1 else normal_style)
+                if revenue and index > 0 and column == 1:
+                    style = ParagraphStyle(
+                        f'DailySummaryRevenue{index}', parent=right_style, fontName=FONT_BOLD,
+                        textColor=colors.HexColor({2: '#15803d', 3: '#a85b00'}.get(index, '#162033')),
+                    )
+                cells.append(cell(value, style, amount_width=63 if index > 0 and column == 1 else None))
+            result.append(cells)
+        return result
+
+    left = Table(summary_cells(payment_rows), colWidths=[175, 75])
+    right = Table(summary_cells(revenue_rows, revenue=True), colWidths=[175, 75])
     for summary_table in (left, right):
         summary_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#eff6ff')), ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#0f2f5f')),
@@ -396,7 +443,7 @@ def generate_daily_summary_pdf(data, tenant=None):
     right.setStyle(TableStyle([('TEXTCOLOR', (1, 2), (1, 2), colors.HexColor('#15803d')), ('TEXTCOLOR', (1, 3), (1, 3), colors.HexColor('#a85b00')), ('FONTNAME', (1, 1), (1, -1), FONT_BOLD)]))
     elements.append(Table([[left, right]], colWidths=[251, 251], style=[('VALIGN', (0, 0), (-1, -1), 'TOP'), ('LEFTPADDING', (0, 0), (-1, -1), 0), ('RIGHTPADDING', (0, 0), (-1, -1), 10)]))
     elements.append(Spacer(1, 16))
-    total_strip = Table([[Paragraph('Günlük Tahsilat', ParagraphStyle('TotalLabel', parent=section_style, fontSize=15, spaceBefore=0, spaceAfter=0)), Paragraph(_format_currency(data['collected_total']), ParagraphStyle('TotalValue', parent=metric_value_style, fontSize=22, leading=26, alignment=2, textColor=colors.HexColor('#15803d')))]], colWidths=[250, 252], rowHeights=[50])
+    total_strip = Table([[Paragraph('Günlük Tahsilat', ParagraphStyle('TotalLabel', parent=section_style, fontSize=15, spaceBefore=0, spaceAfter=0)), Paragraph(_format_currency(data['collected_total']), ParagraphStyle('TotalValue', parent=metric_value_style, fontSize=22, leading=26, alignment=2, textColor=colors.HexColor('#15803d')))]], colWidths=[250, 252], minRowHeights=[50])
     total_strip.setStyle(TableStyle([('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#eaf4ff')), ('BOX', (0, 0), (-1, -1), 0.4, colors.HexColor('#eaf4ff')), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'), ('LEFTPADDING', (0, 0), (-1, -1), 16), ('RIGHTPADDING', (0, 0), (-1, -1), 16)]))
     elements.extend([total_strip, Spacer(1, 28), Paragraph(f'Bu rapor {escape(company["name"] or "Servis Yönetimi")} tarafından otomatik oluşturulmuştur.', ParagraphStyle('DailySummaryFooter', parent=normal_style, fontSize=7.5, textColor=colors.HexColor('#64748b'), alignment=1))])
     doc.build(elements)
@@ -423,7 +470,7 @@ def generate_daily_service_list_pdf(data, tenant=None):
     card_title = ParagraphStyle('DailyListCardTitle', parent=normal, fontName=FONT_BOLD, fontSize=9.5, leading=12, textColor=navy)
     card_value = ParagraphStyle('DailyListCardValue', parent=normal, fontName=FONT_BOLD, fontSize=22, leading=25, textColor=navy)
     service_name = ParagraphStyle('DailyListServiceName', parent=normal, fontName=FONT_BOLD, fontSize=10.2, leading=13, textColor=navy)
-    time_style = ParagraphStyle('DailyListTime', parent=normal, fontName=FONT_BOLD, fontSize=17, leading=20, alignment=1, textColor=navy)
+    time_style = ParagraphStyle('DailyListTime', parent=normal, fontName=FONT_BOLD, fontSize=14, leading=18, alignment=1, textColor=navy, splitLongWords=False)
     tech_style = ParagraphStyle('DailyListTech', parent=normal, fontName=FONT_BOLD, fontSize=9.5, leading=12, alignment=1, textColor=navy)
 
     weekdays = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar']
@@ -444,14 +491,14 @@ def generate_daily_service_list_pdf(data, tenant=None):
         f"<b>{report_title}</b><br/><font size=\"10\">{date_label}</font><br/><font size=\"7.5\" color=\"#cbd5e1\">Rapor No: {report_number_prefix}-{data['report_date'].strftime('%Y%m%d')}</font>",
         ParagraphStyle('DailyListHeaderRight', parent=normal, fontName=FONT_BOLD, fontSize=14, leading=18, alignment=2, textColor=colors.white),
     )
-    header = Table([[left_header, right_header]], colWidths=[280, 247], rowHeights=[80])
+    header = Table([[left_header, right_header]], colWidths=[280, 247], minRowHeights=[80])
     header.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, -1), navy), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ('LEFTPADDING', (0, 0), (-1, -1), 16), ('RIGHTPADDING', (0, 0), (-1, -1), 16),
     ]))
 
     def metric(label, value, background, value_color='#0f2f5f'):
-        return Table([[Paragraph(label, card_title)], [Paragraph(str(value), ParagraphStyle(f'DailyListMetric{label}', parent=card_value, textColor=colors.HexColor(value_color)))]], colWidths=[125], rowHeights=[20, 28], style=TableStyle([
+        return Table([[Paragraph(label, card_title)], [Paragraph(str(value), ParagraphStyle(f'DailyListMetric{label}', parent=card_value, textColor=colors.HexColor(value_color)))]], colWidths=[125], minRowHeights=[20, 28], style=TableStyle([
             ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor(background)), ('BOX', (0, 0), (-1, -1), .4, colors.HexColor(background)),
             ('LEFTPADDING', (0, 0), (-1, -1), 11), ('TOPPADDING', (0, 0), (-1, -1), 8), ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
         ]))
@@ -465,7 +512,7 @@ def generate_daily_service_list_pdf(data, tenant=None):
     ]], colWidths=[132, 132, 132, 132], style=[('LEFTPADDING', (0, 0), (-1, -1), 0), ('RIGHTPADDING', (0, 0), (-1, -1), 7), ('VALIGN', (0, 0), (-1, -1), 'TOP')])
     elements.extend([metrics, Spacer(1, 16)])
     section_title = f'{escape(technician_name)} Servis Programı' if technician_name else 'Bugünün Servis Programı'
-    section = Table([[Paragraph(section_title, ParagraphStyle('DailyListSection', parent=heading, fontSize=15, leading=19, textColor=colors.white))]], colWidths=[527], rowHeights=[38])
+    section = Table([[Paragraph(section_title, ParagraphStyle('DailyListSection', parent=heading, fontSize=15, leading=19, textColor=colors.white))]], colWidths=[527], minRowHeights=[38])
     section.setStyle(TableStyle([('BACKGROUND', (0, 0), (-1, -1), navy), ('LEFTPADDING', (0, 0), (-1, -1), 16), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE')]))
     elements.append(section)
     elements.append(Spacer(1, 8))
@@ -479,7 +526,7 @@ def generate_daily_service_list_pdf(data, tenant=None):
     }
     for row in data['services']:
         bg, status_color = status_colors.get(row['status_code'], ('#f1f5f9', '#475569'))
-        status = Table([[Paragraph(escape(row['status_name']), ParagraphStyle(f"DailyListStatus{row['receipt_number']}", parent=normal, fontName=FONT_BOLD, fontSize=8.5, alignment=1, textColor=colors.HexColor(status_color)))]], colWidths=[93], rowHeights=[24], style=[
+        status = Table([[Paragraph(escape(row['status_name']), ParagraphStyle(f"DailyListStatus{row['receipt_number']}", parent=normal, fontName=FONT_BOLD, fontSize=8.5, alignment=1, textColor=colors.HexColor(status_color)))]], colWidths=[93], minRowHeights=[24], style=[
             ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor(bg)), ('BOX', (0, 0), (-1, -1), .3, colors.HexColor(bg)), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ])
         detail_lines = [
@@ -493,7 +540,7 @@ def generate_daily_service_list_pdf(data, tenant=None):
             detail_lines.append(f"<b>Cihaz:</b> {escape(row['device_name'])}")
         details = Paragraph('<br/>'.join(detail_lines), service_name)
         technician = Paragraph(f"<font size=\"8\" color=\"#64748b\">TEKNİSYEN</font><br/>{escape(row['technician_name'])}", tech_style)
-        service_card = Table([[Paragraph(row['time'], time_style), status, details, technician]], colWidths=[70, 104, 250, 103], rowHeights=[94])
+        service_card = Table([[Paragraph(row['time'], time_style), status, details, technician]], colWidths=[70, 104, 250, 103], minRowHeights=[94])
         service_card.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, -1), colors.white), ('BOX', (0, 0), (-1, -1), .55, colors.HexColor('#dbe5ef')),
             ('LINEAFTER', (1, 0), (1, 0), .55, colors.HexColor('#bfdbfe')), ('LINEAFTER', (2, 0), (2, 0), .55, colors.HexColor('#dbe5ef')),
