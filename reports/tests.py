@@ -103,3 +103,82 @@ class DailySummaryPDFTests(TestCase):
             'technician_id': str(other_technician_user.technician_profile.id),
         })
         self.assertEqual(other_response.status_code, 404)
+
+
+class MyDailySummaryTests(TestCase):
+    def setUp(self):
+        DailySummaryPDFTests.setUp(self)
+        self.technician_user = User.objects.create_user(
+            email='my-summary-tech@example.com', password='pass123', tenant=self.tenant,
+            user_type='technician', approval_status='approved', first_name='Kendi', last_name='Teknisyenim',
+        )
+        self.technician = self.technician_user.technician_profile
+        self.peer_user = User.objects.create_user(
+            email='my-summary-peer@example.com', password='pass123', tenant=self.tenant,
+            user_type='technician', approval_status='approved',
+        )
+        self.service.technician = self.technician
+        self.service.save()
+        self.peer_service = Service.objects.create(
+            tenant=self.tenant, customer=self.customer, customer_full_name='Diğer Teknisyenin Müşterisi',
+            customer_phone=self.customer.phone_number, scheduled_date=self.start,
+            technician=self.peer_user.technician_profile,
+        )
+        ServiceOperations.objects.create(service=self.peer_service, name='Görünmemesi gereken işlem', quantity=1, unit_price=Decimal('8000.00'))
+        peer_payment = ServicePayment.objects.create(service=self.peer_service, amount=Decimal('3000.00'), payment_method=self.method)
+        ServicePayment.objects.filter(pk=peer_payment.pk).update(created_at=self.start)
+        self.client.force_authenticate(self.technician_user)
+
+    def test_own_summary_filters_services_payments_and_totals(self):
+        response = self.client.get(reverse('report-my-daily-summary'), {'date': self.report_date.isoformat()})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([row['id'] for row in response.data['services']], [str(self.service.id)])
+        self.assertEqual(response.data['total_services'], 1)
+        self.assertEqual(response.data['total_revenue'], Decimal('1250.00'))
+        self.assertEqual(response.data['collected_total'], Decimal('750.00'))
+        self.assertEqual(response.data['outstanding_total'], Decimal('500.00'))
+        self.assertEqual(response.data['payment_distribution'], [{'name': 'Kart', 'amount': Decimal('750.00')}])
+
+    def test_client_cannot_select_another_technician(self):
+        response = self.client.get(reverse('report-my-daily-summary'), {
+            'date': self.report_date.isoformat(), 'technician_id': str(self.peer_user.technician_profile.id),
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([row['id'] for row in response.data['services']], [str(self.service.id)])
+
+    def test_own_pdf_does_not_include_peer_service(self):
+        from unittest.mock import patch
+        from reports.utils import generate_daily_summary_pdf
+        with patch('reports.views.generate_daily_summary_pdf', wraps=generate_daily_summary_pdf) as render:
+            response = self.client.get(reverse('report-my-daily-summary-pdf'), {
+                'date': self.report_date.isoformat(), 'technician_id': str(self.peer_user.technician_profile.id),
+            })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'application/pdf')
+        self.assertIn('gunluk_icmalim_', response['Content-Disposition'])
+        self.assertTrue(response.content.startswith(b'%PDF-'))
+        self.assertGreater(len(response.content), 1000)
+        data = render.call_args.args[0]
+        self.assertEqual([row['id'] for row in data['services']], [str(self.service.id)])
+        self.assertEqual(data['technician_name'], 'Kendi Teknisyenim')
+        self.assertEqual(data['collected_total'], Decimal('750.00'))
+
+    def test_missing_technician_profile_does_not_fall_back_to_tenant_report(self):
+        self.client.force_authenticate(self.user)
+        for name in ['report-my-daily-summary', 'report-my-daily-summary-pdf']:
+            response = self.client.get(reverse(name), {'date': self.report_date.isoformat()})
+            self.assertEqual(response.status_code, 403)
+
+    def test_own_report_requires_login_and_valid_date(self):
+        response = self.client.get(reverse('report-my-daily-summary'), {'date': 'invalid'})
+        self.assertEqual(response.status_code, 400)
+        self.client.force_authenticate(None)
+        response = self.client.get(reverse('report-my-daily-summary'))
+        self.assertIn(response.status_code, [401, 403])
+
+    def test_empty_day_returns_only_zero_totals(self):
+        response = self.client.get(reverse('report-my-daily-summary'), {'date': (self.report_date + timedelta(days=2)).isoformat()})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['services'], [])
+        self.assertEqual(response.data['total_services'], 0)
+        self.assertEqual(response.data['collected_total'], Decimal('0.00'))

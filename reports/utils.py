@@ -352,7 +352,9 @@ def generate_daily_summary_pdf(data, tenant=None):
             ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor(background)), ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor(background)), ('LEFTPADDING', (0, 0), (-1, -1), 12), ('TOPPADDING', (0, 0), (-1, -1), 8), ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
         ]))
 
-    elements = [header, Spacer(1, 20), Paragraph('GÜNLÜK İCMAL RAPORU', title_style), Paragraph(f'{report_date} - Servis operasyonunun gün sonu görünümü', subtitle_style)]
+    report_title = 'GÜNLÜK İCMALİM' if data.get('technician_name') else 'GÜNLÜK İCMAL RAPORU'
+    report_subtitle = f"{report_date} - {data['technician_name']}" if data.get('technician_name') else f'{report_date} - Servis operasyonunun gün sonu görünümü'
+    elements = [header, Spacer(1, 20), Paragraph(report_title, title_style), Paragraph(escape(report_subtitle), subtitle_style)]
     metrics = Table([[
         metric('Toplam Servis', str(data['total_services']), '#eff6ff'),
         metric('Toplam Ciro', _format_currency(data['total_revenue']), '#f1f7ff'),

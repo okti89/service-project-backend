@@ -158,21 +158,22 @@ def serialize_service_for_report(service, start_date=None, end_date=None):
     }
 
 
-def build_daily_summary_data(tenant, report_date):
+def build_daily_summary_data(tenant, report_date, technician=None):
     start = tz.make_aware(datetime.combine(report_date, time.min))
     end = start + timedelta(days=1)
-    services = list(
-        Service.objects.filter(tenant=tenant, scheduled_date__gte=start, scheduled_date__lt=end)
-        .exclude(status__code='cancelled')
-        .select_related('technician__user', 'status')
-        .prefetch_related('items', 'payments__payment_method')
-        .order_by('scheduled_date', 'receipt_number')
-    )
-    daily_payments = list(
-        ServicePayment.objects.filter(tenant=tenant, created_at__gte=start, created_at__lt=end)
-        .exclude(service__status__code='cancelled')
-        .select_related('service', 'payment_method')
-    )
+    service_queryset = Service.objects.filter(
+        tenant=tenant, scheduled_date__gte=start, scheduled_date__lt=end,
+    ).exclude(status__code='cancelled')
+    payment_queryset = ServicePayment.objects.filter(
+        tenant=tenant, created_at__gte=start, created_at__lt=end,
+    ).exclude(service__status__code='cancelled')
+    if technician is not None:
+        service_queryset = service_queryset.filter(technician=technician)
+        payment_queryset = payment_queryset.filter(service__technician=technician, service__tenant=tenant)
+    services = list(service_queryset.select_related('technician__user', 'status')
+                    .prefetch_related('items', 'payments__payment_method')
+                    .order_by('scheduled_date', 'receipt_number'))
+    daily_payments = list(payment_queryset.select_related('service', 'payment_method'))
 
     payment_by_service = {}
     distribution = {}
@@ -297,6 +298,36 @@ class DailySummaryAPIView(APIView):
         if report_date is None:
             return Response({'date': 'Tarih YYYY-MM-DD formatında olmalıdır.'}, status=status.HTTP_400_BAD_REQUEST)
         return Response(build_daily_summary_data(get_request_tenant(request), report_date))
+
+
+class MyDailySummaryAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        tenant = get_request_tenant(request)
+        technician = Technician.objects.filter(user=request.user, user__tenant=tenant).first() if tenant else None
+        if technician is None:
+            return Response({'detail': 'Bu hesap için teknisyen profili bulunamadı.'}, status=status.HTTP_403_FORBIDDEN)
+        report_date = parse_daily_report_date(request)
+        if report_date is None:
+            return Response({'date': 'Tarih YYYY-MM-DD formatında olmalıdır.'}, status=status.HTTP_400_BAD_REQUEST)
+        # Ignore client-supplied technician_id; this report always belongs to the session user.
+        data = build_daily_summary_data(tenant, report_date, technician=technician)
+        data['technician_name'] = request.user.get_full_name() or request.user.email
+        return Response(data)
+
+
+class MyDailySummaryPDFView(MyDailySummaryAPIView):
+    def get(self, request):
+        response = super().get(request)
+        if response.status_code != status.HTTP_200_OK:
+            return response
+        data = response.data
+        pdf_buffer = generate_daily_summary_pdf(data, tenant=get_request_tenant(request))
+        filename = f"gunluk_icmalim_{data['report_date'].strftime('%Y_%m_%d')}.pdf"
+        pdf_response = HttpResponse(pdf_buffer.getvalue(), content_type='application/pdf')
+        pdf_response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return pdf_response
 
 
 class DailyServiceListAPIView(APIView):
