@@ -58,6 +58,7 @@ from .serializers import (
 )
 from .models import ServiceTimeline
 from .pdf_utils import generate_service_form_pdf, generate_warranty_certificate_pdf
+from .service_form_a4 import generate_service_form_a4_pdf
 from notifications.services import create_notification
 
 
@@ -1321,6 +1322,24 @@ class ServiceFormPDFView(APIView):
         )
         pdf_buffer = generate_service_form_pdf(service)
         filename = _build_service_pdf_filename(service)
+        response = HttpResponse(pdf_buffer.getvalue(), content_type='application/pdf')
+        response['Content-Disposition'] = _build_download_disposition(filename)
+        return response
+
+
+class ServiceFormA4PDFView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, pk):
+        service = get_object_or_404(
+            _service_tenant_queryset(request).select_related(
+                'tenant', 'customer', 'technician__user', 'status',
+                'device_type', 'device_brand', 'device_model',
+            ).prefetch_related('items__product', 'signatures'),
+            pk=pk,
+        )
+        pdf_buffer = generate_service_form_a4_pdf(service)
+        filename = 'a4_' + _build_service_pdf_filename(service)
         response = HttpResponse(pdf_buffer.getvalue(), content_type='application/pdf')
         response['Content-Disposition'] = _build_download_disposition(filename)
         return response

@@ -4,7 +4,7 @@ from .views import (BrandListCreateView, ModelListCreateView,
                     AdminServiceListCreateView, AdminServiceRetrieveUpdateDestroyView, DeviceTypeListCreateView, PaymentMethodListCreateView, WeeklyScheduledServiceSummaryView,
                     ServiceOperationsListCreateView, ServiceOperationTemplateListCreateView, ServicePaymentListCreateView, ServicePaymentRefundView, ServicePhotoListCreateView, ServiceSignatureListCreateView,
                     PublicServiceListView, PublicServiceDetailView, PublicServiceFormPDFView,
-                    ServiceFormPDFView, ServiceWarrantyPDFView, ServiceFormEmailView, ServiceWhatsAppStatusLinkView, ServiceStatusListView)
+                    ServiceFormPDFView, ServiceFormA4PDFView, ServiceWarrantyPDFView, ServiceFormEmailView, ServiceWhatsAppStatusLinkView, ServiceStatusListView)
 urlpatterns = [
     path('device-types/', DeviceTypeListCreateView.as_view(), name='device-type-list-create'),
     path('brands/', BrandListCreateView.as_view(), name='brand-list-create'),
@@ -24,6 +24,7 @@ urlpatterns = [
     path('weekly-scheduled-summary/', WeeklyScheduledServiceSummaryView.as_view(), name='weekly-scheduled-service-summary'),
     path('admin-services/<uuid:pk>/', AdminServiceRetrieveUpdateDestroyView.as_view(), name='admin-service-retrieve-update-destroy'),
     path('admin-services/<uuid:pk>/form-pdf/', ServiceFormPDFView.as_view(), name='admin-service-form-pdf'),
+    path('admin-services/<uuid:pk>/form-a4-pdf/', ServiceFormA4PDFView.as_view(), name='admin-service-form-a4-pdf'),
     path('admin-services/<uuid:pk>/warranty-pdf/', ServiceWarrantyPDFView.as_view(), name='admin-service-warranty-pdf'),
     path('admin-services/<uuid:pk>/send-form-email/', ServiceFormEmailView.as_view(), name='admin-service-send-form-email'),
     path('admin-services/<uuid:pk>/whatsapp-status-link/', ServiceWhatsAppStatusLinkView.as_view(), name='admin-service-whatsapp-status-link'),
