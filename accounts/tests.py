@@ -176,3 +176,92 @@ class PendingApprovalReminderTests(TestCase):
         self.assertEqual(sent_count, 1)
         create_notification_mock.assert_called_once()
         send_email_mock.assert_not_called()
+
+
+class PersonnelRegistrationTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.tenant = Tenant.objects.create(name='Personnel Test', code='personnel-test')
+        self.notification_patch = patch('accounts.views.create_notification')
+        self.notification_patch.start()
+        self.addCleanup(self.notification_patch.stop)
+
+    def register(self, email, **extra):
+        payload = {
+            'tenant_code': self.tenant.code,
+            'email': email,
+            'password': 'PersonnelTest2026!',
+            'first_name': 'Test', 'last_name': 'Employee',
+            **extra,
+        }
+        return self.client.post('/api/accounts/auth/register/', payload, format='json')
+
+    def test_multiple_employees_can_register_with_omitted_blank_or_null_phone(self):
+        for i, extra in enumerate(({}, {'phone_number': ''}, {'phone_number': None}, {'phone_number': '   '})):
+            with self.subTest(extra=extra):
+                response = self.register(f'no-phone-{i}@example.com', **extra)
+                self.assertEqual(response.status_code, 201, response.data)
+                user = User.objects.get(email=f'no-phone-{i}@example.com')
+                self.assertIsNone(user.phone_number)
+                self.assertEqual(user.tenant, self.tenant)
+                self.assertEqual(user.approval_status, 'pending')
+                self.assertEqual(user.user_type, 'technician')
+
+    def test_provided_phone_is_preserved_and_duplicates_are_rejected(self):
+        response = self.register('phone@example.com', phone_number='05420000001')
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(User.objects.get(email='phone@example.com').phone_number, '05420000001')
+        duplicate = self.register('duplicate@example.com', phone_number='05420000001')
+        self.assertEqual(duplicate.status_code, 400)
+        self.assertIn('phone_number', duplicate.data)
+
+    def test_company_code_is_still_required_and_invalid_code_is_rejected(self):
+        for code in ('', 'missing-company'):
+            response = self.register('invalid@example.com', tenant_code=code)
+            self.assertEqual(response.status_code, 400)
+        self.assertFalse(User.objects.filter(email='invalid@example.com').exists())
+
+    def test_registration_cannot_request_admin_role_or_self_approval(self):
+        response = self.register('pending@example.com', user_type='admin', approval_status='approved', is_staff=True)
+        self.assertEqual(response.status_code, 201, response.data)
+        user = User.objects.get(email='pending@example.com')
+        self.assertEqual(user.user_type, 'technician')
+        self.assertEqual(user.approval_status, 'pending')
+        self.assertFalse(user.is_staff)
+        self.assertFalse(hasattr(user, 'technician_profile'))
+        self.client.credentials(HTTP_AUTHORIZATION='Token ' + response.data['token'])
+        check = self.client.get('/api/accounts/auth/check/')
+        self.assertEqual(check.status_code, 403)
+        self.assertEqual(check.data['account_status'], 'pending')
+
+    @patch('accounts.views.send_approval_email')
+    def test_admin_can_approve_employee_registered_without_phone(self, send_email):
+        response = self.register('approve-me@example.com')
+        self.assertEqual(response.status_code, 201, response.data)
+        user = User.objects.get(email='approve-me@example.com')
+        admin = User.objects.create_user(email='admin@example.com', password='AdminTest2026!', tenant=self.tenant, user_type='admin', approval_status='approved')
+        self.client.force_authenticate(user=admin)
+        approval = self.client.patch(f'/api/accounts/admin/users/{user.id}/', {'approval_status': 'approved'}, format='json')
+        self.assertEqual(approval.status_code, 200, approval.data)
+        user.refresh_from_db()
+        self.assertEqual(user.approval_status, 'approved')
+        self.assertIsNone(user.phone_number)
+        self.assertTrue(hasattr(user, 'technician_profile'))
+        self.client.force_authenticate(user=None)
+        self.client.credentials(HTTP_AUTHORIZATION='Token ' + response.data['token'])
+        self.assertEqual(self.client.get('/api/accounts/auth/check/').status_code, 200)
+
+    def test_nonempty_phone_still_obeys_length_limit(self):
+        response = self.register('long-phone@example.com', phone_number='1' * 16)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('phone_number', response.data)
+
+    def test_editing_multiple_employees_without_phone_keeps_null(self):
+        for i in range(2):
+            response = self.register(f'edit-no-phone-{i}@example.com')
+            self.assertEqual(response.status_code, 201, response.data)
+            self.client.credentials(HTTP_AUTHORIZATION='Token ' + response.data['token'])
+            edited = self.client.patch('/api/accounts/auth/me/', {'phone_number': ''}, format='json')
+            self.assertEqual(edited.status_code, 200, edited.data)
+            self.assertIsNone(User.objects.get(email=f'edit-no-phone-{i}@example.com').phone_number)
+            self.client.credentials()

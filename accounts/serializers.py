@@ -155,6 +155,9 @@ class UserSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ("id", "is_staff", "is_superuser", "is_platform_admin", "date_joined")
 
+    def validate_phone_number(self, value):
+        return (value or "").strip() or None
+
     def get_tenant_code(self, obj):
         tenant = getattr(obj, 'tenant', None)
         return getattr(tenant, 'code', None) if tenant else None
@@ -177,7 +180,16 @@ class RegisterSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ("email", "password", "first_name", "last_name", "phone_number", "user_type")
-        extra_kwargs = {"password": {"write_only": True}}
+        extra_kwargs = {
+            "password": {"write_only": True},
+            "phone_number": {"required": False, "allow_blank": True, "allow_null": True},
+            "user_type": {"read_only": True},
+        }
+
+    def validate_phone_number(self, value):
+        # Multiple employees may register without a phone; empty strings must
+        # not collide with the phone field's existing uniqueness constraint.
+        return (value or "").strip() or None
 
     def validate(self, attrs):
         request = self.context.get("request")
