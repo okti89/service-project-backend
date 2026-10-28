@@ -1,4 +1,4 @@
-﻿from django.http import JsonResponse
+from django.http import JsonResponse
 from rest_framework.authtoken.models import Token
 
 
@@ -11,6 +11,9 @@ class SubscriptionAccessMiddleware:
         '/api/accounts/auth/logout/',
         '/api/accounts/auth/delete-account/',
         '/api/config/public/company/',
+        '/api/billing/apple/profile/',
+        '/api/billing/apple/verify/',
+        '/api/billing/apple/notifications/',
     }
 
     def __init__(self, get_response):
@@ -27,7 +30,7 @@ class SubscriptionAccessMiddleware:
                     if not subscription['is_active']:
                         return JsonResponse(
                             {
-                                'detail': 'Firma üyeliğinin süresi doldu. Yenileme için destek ekibiyle iletişime geçin.',
+                                'detail': 'Firma üyeliğinin süresi doldu. Firma yöneticiniz üyeliği uygulamadan yönetebilir.',
                                 'account_status': 'subscription_expired',
                                 'subscription': subscription,
                             },

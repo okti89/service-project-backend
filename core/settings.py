@@ -90,6 +90,7 @@ INSTALLED_APPS = [
     'feedback',
     'tenants.apps.TenantsConfig',
     'maps',
+    'billing',
 ]
 
 MIDDLEWARE = [
@@ -344,3 +345,10 @@ GOOGLE_MAPS_KEY = config('GOOGLE_MAPS_KEY', default='')
 # Tenant basina aylik harita istek limiti. Override etmek icin
 # MAPS_MONTHLY_QUOTA env degiskeni kullanilabilir.
 MAPS_MONTHLY_QUOTA = config('MAPS_MONTHLY_QUOTA', default=1000, cast=int)
+
+# Secret values stay on the server. Sandbox access is restricted to explicit demo tenants.
+APPLE_IAP_KEY_ID = config('APPLE_IAP_KEY_ID', default='')
+APPLE_IAP_ISSUER_ID = config('APPLE_IAP_ISSUER_ID', default='')
+APPLE_IAP_PRIVATE_KEY_PATH = config('APPLE_IAP_PRIVATE_KEY_PATH', default='')
+APPLE_IAP_APP_ID = config('APPLE_IAP_APP_ID', default=6791547591, cast=int)
+APPLE_IAP_SANDBOX_TENANTS = [value.strip() for value in config('APPLE_IAP_SANDBOX_TENANTS', default='').split(',') if value.strip()]

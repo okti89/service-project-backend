@@ -16,6 +16,7 @@ urlpatterns = [
     path('delete-account/', account_deletion, name='account-deletion'),
     path('api/account-deletion-requests/', account_deletion_request_api, name='account-deletion-request-api'),
     path('admin/', admin.site.urls),
+    path('api/billing/', include('billing.urls')),
     path('api/accounts/', include('accounts.urls')),
     path('api/accounting/', include('accounting.urls')),
     path('api/config/', include('config.urls')),
