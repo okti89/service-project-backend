@@ -346,9 +346,12 @@ GOOGLE_MAPS_KEY = config('GOOGLE_MAPS_KEY', default='')
 # MAPS_MONTHLY_QUOTA env degiskeni kullanilabilir.
 MAPS_MONTHLY_QUOTA = config('MAPS_MONTHLY_QUOTA', default=1000, cast=int)
 
-# Secret values stay on the server. Sandbox access is restricted to explicit demo tenants.
-APPLE_IAP_KEY_ID = config('APPLE_IAP_KEY_ID', default='')
-APPLE_IAP_ISSUER_ID = config('APPLE_IAP_ISSUER_ID', default='')
-APPLE_IAP_PRIVATE_KEY_PATH = config('APPLE_IAP_PRIVATE_KEY_PATH', default='')
-APPLE_IAP_APP_ID = config('APPLE_IAP_APP_ID', default=6791547591, cast=int)
-APPLE_IAP_SANDBOX_TENANTS = [value.strip() for value in config('APPLE_IAP_SANDBOX_TENANTS', default='').split(',') if value.strip()]
+# RevenueCat secret API key and webhook authorization remain server-only.
+REVENUECAT_SECRET_API_KEY = config('REVENUECAT_SECRET_API_KEY', default='')
+REVENUECAT_APPLE_PUBLIC_SDK_KEY = config('REVENUECAT_APPLE_PUBLIC_SDK_KEY', default='')
+REVENUECAT_ENTITLEMENT_ID = config('REVENUECAT_ENTITLEMENT_ID', default='company_10')
+REVENUECAT_WEBHOOK_AUTHORIZATION = config('REVENUECAT_WEBHOOK_AUTHORIZATION', default='')
+REVENUECAT_SANDBOX_TENANTS = [value.strip() for value in config('REVENUECAT_SANDBOX_TENANTS', default='').split(',') if value.strip()]
+
+REVENUECAT_PROJECT_ID = config('REVENUECAT_PROJECT_ID', default='')
+REVENUECAT_APPLE_APP_ID = config('REVENUECAT_APPLE_APP_ID', default='')

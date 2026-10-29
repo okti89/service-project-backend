@@ -2,26 +2,24 @@ import uuid
 from django.db import models
 from django.utils import timezone
 
-class AppleBillingAccount(models.Model):
-    tenant = models.OneToOneField('tenants.Tenant', on_delete=models.CASCADE, related_name='apple_billing')
-    app_account_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+class BillingAccount(models.Model):
+    tenant = models.OneToOneField('tenants.Tenant', on_delete=models.CASCADE, related_name='billing_account')
+    app_user_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
 
-class AppleSubscription(models.Model):
-    account = models.ForeignKey(AppleBillingAccount, on_delete=models.CASCADE, related_name='subscriptions')
-    original_transaction_id = models.CharField(max_length=128, unique=True)
-    transaction_id = models.CharField(max_length=128)
+class CompanySubscription(models.Model):
+    account = models.OneToOneField(BillingAccount, on_delete=models.CASCADE, related_name='subscription')
     product_id = models.CharField(max_length=200)
     environment = models.CharField(max_length=20)
+    store = models.CharField(max_length=30, default='app_store')
     expires_at = models.DateTimeField()
-    revoked_at = models.DateTimeField(null=True, blank=True)
-    signed_at = models.DateTimeField()
-    status = models.PositiveSmallIntegerField()
+    active = models.BooleanField(default=False)
+    verified_at = models.DateTimeField()
     updated_at = models.DateTimeField(auto_now=True)
 
     @property
     def is_active(self):
-        return self.status == 1 and not self.revoked_at and self.expires_at > timezone.now()
+        return self.active and self.expires_at > timezone.now()
 
-class AppleNotification(models.Model):
-    notification_id = models.UUIDField(unique=True)
+class BillingEvent(models.Model):
+    event_id = models.CharField(max_length=128, unique=True)
     processed_at = models.DateTimeField(auto_now_add=True)

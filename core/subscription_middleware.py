@@ -11,9 +11,9 @@ class SubscriptionAccessMiddleware:
         '/api/accounts/auth/logout/',
         '/api/accounts/auth/delete-account/',
         '/api/config/public/company/',
-        '/api/billing/apple/profile/',
-        '/api/billing/apple/verify/',
-        '/api/billing/apple/notifications/',
+        '/api/billing/revenuecat/profile/',
+        '/api/billing/revenuecat/sync/',
+        '/api/billing/revenuecat/webhook/',
     }
 
     def __init__(self, get_response):

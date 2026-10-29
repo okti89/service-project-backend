@@ -1,68 +1,88 @@
 from datetime import datetime, timezone as datetime_timezone
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
-from . import apple
-from .catalog import BUNDLE_ID, PRODUCTS
-from .models import AppleBillingAccount, AppleSubscription
+from django.utils.dateparse import parse_datetime
+from . import revenuecat
+from .catalog import PRODUCTS
+from .models import BillingAccount, CompanySubscription
 
 
-def timestamp(value):
-    if value is None:
-        raise apple.InvalidPurchase('Missing Apple timestamp')
-    return datetime.fromtimestamp(value / 1000, tz=datetime_timezone.utc)
+def parse_time(value):
+    result = parse_datetime(value) if isinstance(value, str) else None
+    if result is None or timezone.is_naive(result):
+        raise revenuecat.InvalidStoreData('Missing or invalid timestamp')
+    return result
 
 
-def apply_verified(tenant, decoded, status, environment):
-    product = PRODUCTS.get(decoded.productId)
-    if not product or decoded.bundleId != BUNDLE_ID or decoded.isUpgraded:
-        raise apple.InvalidPurchase('Unsupported subscription')
-    if environment != 'Production' and not apple.allow_sandbox(tenant):
-        raise apple.InvalidPurchase('Sandbox is restricted to test companies')
-    if not decoded.originalTransactionId or not decoded.transactionId or not decoded.appAccountToken:
-        raise apple.InvalidPurchase('Subscription account binding is missing')
+def sync_subscription(tenant):
+    account, _ = BillingAccount.objects.get_or_create(tenant=tenant)
+    # The customer ID comes from the authenticated tenant, never the request body.
+    payload = revenuecat.fetch_customer(account.app_user_id)
+    subscriber = payload['subscriber']
+    if subscriber.get('original_app_user_id') != str(account.app_user_id):
+        raise revenuecat.InvalidStoreData('Customer identity is not bound to this company')
+    request_ms = payload.get('request_date_ms')
+    if not isinstance(request_ms, (int, float)) or isinstance(request_ms, bool):
+        raise revenuecat.InvalidStoreData('Missing verification time')
+    try:
+        checked_at = datetime.fromtimestamp(request_ms / 1000, tz=datetime_timezone.utc)
+    except (OverflowError, OSError, ValueError) as exc:
+        raise revenuecat.InvalidStoreData('Invalid verification time') from exc
+    entitlements = subscriber.get('entitlements')
+    subscriptions = subscriber.get('subscriptions')
+    if not isinstance(entitlements, dict) or not isinstance(subscriptions, dict):
+        raise revenuecat.InvalidStoreData('Missing subscription state')
+    entitlement = entitlements.get(settings.REVENUECAT_ENTITLEMENT_ID)
+    values = None
+    if entitlement:
+        if not isinstance(entitlement, dict):
+            raise revenuecat.InvalidStoreData('Malformed entitlement')
+        product_id = entitlement.get('product_identifier')
+        if not isinstance(product_id, str):
+            raise revenuecat.InvalidStoreData('Malformed product identifier')
+        product = subscriptions.get(product_id)
+        if product_id not in PRODUCTS or not isinstance(product, dict) or product.get('store') != 'app_store':
+            raise revenuecat.InvalidStoreData('Unsupported product or store')
+        sandbox = product.get('is_sandbox')
+        if not isinstance(sandbox, bool):
+            raise revenuecat.InvalidStoreData('Missing store environment')
+        if sandbox and tenant.code not in getattr(settings, 'REVENUECAT_SANDBOX_TENANTS', []):
+            raise revenuecat.InvalidStoreData('Sandbox is restricted to demo companies')
+        expiry = min(parse_time(entitlement.get('expires_date')), parse_time(product.get('expires_date')))
+        values = dict(product_id=product_id, store='app_store', environment='Sandbox' if sandbox else 'Production',
+                      expires_at=expiry, active=product.get('gives_access') is True and not bool(product.get('refunded_at')) and expiry > timezone.now(),
+                      verified_at=checked_at)
     from tenants.models import Tenant
     with transaction.atomic():
         Tenant.objects.select_for_update().get(pk=tenant.pk)
-        account, _ = AppleBillingAccount.objects.get_or_create(tenant=tenant)
-        if str(account.app_account_token).lower() != str(decoded.appAccountToken).lower():
-            raise apple.InvalidPurchase('Purchase belongs to a different company')
-        existing = AppleSubscription.objects.select_for_update().filter(original_transaction_id=decoded.originalTransactionId).first()
-        if existing and existing.account_id != account.pk:
-            raise apple.InvalidPurchase('Purchase is already assigned')
-        signed_at = timestamp(decoded.signedDate)
-        if existing and existing.signed_at > signed_at:
-            return existing
-        values = dict(account=account, transaction_id=decoded.transactionId,
-                      product_id=decoded.productId, environment=environment,
-                      expires_at=timestamp(decoded.expiresDate), signed_at=signed_at,
-                      revoked_at=timestamp(decoded.revocationDate) if decoded.revocationDate else None,
-                      status=status)
-        subscription, _ = AppleSubscription.objects.update_or_create(
-            original_transaction_id=decoded.originalTransactionId, defaults=values)
-        return subscription
-
-
-def verify_purchase(tenant, transaction_id):
-    decoded, status, environment = apple.fetch_current(transaction_id, tenant)
-    return apply_verified(tenant, decoded, status, environment)
+        previous = CompanySubscription.objects.select_for_update().filter(account=account).first()
+        if previous and previous.verified_at > checked_at:
+            return previous
+        if values:
+            row, _ = CompanySubscription.objects.update_or_create(account=account, defaults=values)
+            return row
+        # An empty customer must not invalidate legacy/manual access before any purchase.
+        if previous:
+            previous.active = False
+            previous.verified_at = checked_at
+            previous.save(update_fields=['active', 'verified_at', 'updated_at'])
+        return previous
 
 
 def subscription_info(tenant):
-    # An expired/refunded Apple purchase cannot fall back to legacy unlimited access.
-    rows = AppleSubscription.objects.filter(account__tenant=tenant).order_by('-expires_at')
-    active = rows.filter(status=1, revoked_at__isnull=True, expires_at__gt=timezone.now()).first()
-    latest = active or rows.first()
-    if not latest:
+    row = CompanySubscription.objects.filter(account__tenant=tenant).first()
+    if not row:
         return None
-    expiry = timezone.localtime(latest.expires_at).date()
-    return {'status': 'apple' if active else 'expired', 'is_active': bool(active),
-            'plan': latest.product_id, 'ends_at': expiry,
-            'days_remaining': max(0, (expiry - timezone.localdate()).days) if active else 0,
-            'max_users': 10, 'provider': 'apple'}
+    expiry = timezone.localtime(row.expires_at).date()
+    return {'status': 'revenuecat' if row.is_active else 'expired', 'is_active': row.is_active,
+            'plan': row.product_id, 'ends_at': expiry,
+            'days_remaining': max(0, (expiry - timezone.localdate()).days) if row.is_active else 0,
+            'max_users': 10, 'provider': 'revenuecat'}
 
 
 def effective_user_limit(tenant):
-    if AppleSubscription.objects.filter(account__tenant=tenant).exists():
+    if CompanySubscription.objects.filter(account__tenant=tenant).exists():
         return 10
     from config.models import CompanyConfig
     config = CompanyConfig.objects.filter(tenant=tenant).first()

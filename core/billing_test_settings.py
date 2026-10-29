@@ -9,4 +9,11 @@ DATABASES = {'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': ':memor
 STORAGES = {'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'}, 'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'}}
 EMAIL_BACKEND = 'django.core.mail.backends.locmem.EmailBackend'
 PASSWORD_HASHERS = ['django.contrib.auth.hashers.MD5PasswordHasher']
-APPLE_IAP_SANDBOX_TENANTS = ['billing-demo']
+REVENUECAT_SANDBOX_TENANTS = ['billing-demo']
+REVENUECAT_ENTITLEMENT_ID = 'company_10'
+REVENUECAT_APPLE_PUBLIC_SDK_KEY = 'appl_test_fixture'
+REVENUECAT_SECRET_API_KEY = 'sk_server_test_fixture_only'
+REVENUECAT_WEBHOOK_AUTHORIZATION = 'Bearer webhook-test-fixture-only'
+
+REVENUECAT_PROJECT_ID = 'projtest'
+REVENUECAT_APPLE_APP_ID = 'apptest'

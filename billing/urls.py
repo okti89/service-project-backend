@@ -1,4 +1,4 @@
 from django.urls import path
 from . import views
-urlpatterns = [path('apple/profile/', views.profile), path('apple/verify/', views.verify),
-               path('apple/notifications/', views.notifications)]
+urlpatterns = [path('revenuecat/profile/', views.profile), path('revenuecat/sync/', views.sync),
+               path('revenuecat/webhook/', views.webhook)]
