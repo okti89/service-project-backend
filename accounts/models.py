@@ -163,8 +163,22 @@ class User(AbstractBaseUser, PermissionsMixin):
             if self.avatar:
                 self.avatar = process_image(self.avatar)
 
-        super().save(*args, **kwargs)
-
+        if self.tenant_id and self.is_active:
+            from django.db import transaction
+            from rest_framework.exceptions import ValidationError
+            from tenants.models import Tenant
+            from billing.services import effective_user_limit
+            with transaction.atomic():
+                tenant = Tenant.objects.select_for_update().get(pk=self.tenant_id)
+                previous = User.objects.filter(pk=self.pk).values('tenant_id', 'is_active').first()
+                if not previous or not previous['is_active'] or previous['tenant_id'] != self.tenant_id:
+                    limit = effective_user_limit(tenant)
+                    count = User.objects.filter(tenant=tenant, is_active=True).exclude(pk=self.pk).count()
+                    if limit > 0 and count >= limit:
+                        raise ValidationError('Yönetici dahil aktif kullanıcı sınırına ulaşıldı.')
+                super().save(*args, **kwargs)
+        else:
+            super().save(*args, **kwargs)
 
 
 class UserDevice(models.Model):

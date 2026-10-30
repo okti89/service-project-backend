@@ -104,8 +104,8 @@ class UserCreateSerializer(serializers.ModelSerializer):
                 )
 
         if tenant:
-            config = CompanyConfig.objects.filter(tenant=tenant).first()
-            max_users = int(getattr(config, "max_users", 0) or 0)
+            from billing.services import effective_user_limit
+            max_users = effective_user_limit(tenant)
 
             if max_users > 0:
                 if User.objects.filter(tenant=tenant, is_active=True).count() >= max_users:
@@ -209,8 +209,8 @@ class RegisterSerializer(serializers.ModelSerializer):
                 {"phone_number": "Bu telefon numarası zaten kayıtlı."}
             )
 
-        config = CompanyConfig.objects.filter(tenant=tenant).first()
-        max_users = int(getattr(config, "max_users", 0) or 0)
+        from billing.services import effective_user_limit
+        max_users = effective_user_limit(tenant)
 
         if max_users > 0:
             if User.objects.filter(tenant=tenant, is_active=True).count() >= max_users:

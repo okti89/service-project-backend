@@ -1,4 +1,4 @@
-﻿import uuid
+import uuid
 from datetime import timedelta
 
 from django.db import models
@@ -30,12 +30,20 @@ class Tenant(models.Model):
         return f"{self.name} ({self.code})"
 
     def subscription_info(self, today=None):
+        from billing.services import subscription_info
+        store_subscription = subscription_info(self)
+        if store_subscription and store_subscription['is_active']:
+            return store_subscription
         today = today or timezone.localdate()
         active_membership = self.memberships.filter(
             premium_started_at__lte=today,
             renewal_date__gt=today,
         ).order_by('-renewal_date').first()
         latest_membership = self.memberships.order_by('-period_number').first()
+
+        # Separately paid/manual memberships remain valid through their own term.
+        if store_subscription and not active_membership:
+            return store_subscription
 
         # Existing tenants are not locked until their first membership is entered.
         if not latest_membership:
