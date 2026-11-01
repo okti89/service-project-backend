@@ -30,7 +30,7 @@ class SubscriptionAccessMiddleware:
                     if not subscription['is_active']:
                         return JsonResponse(
                             {
-                                'detail': 'Firma üyeliğinin süresi doldu. Firma yöneticiniz üyeliği uygulamadan yönetebilir.',
+                                'detail': 'Firma erişim süresi sona erdi. Erişim durumunuz için firma yöneticinizle görüşün.',
                                 'account_status': 'subscription_expired',
                                 'subscription': subscription,
                             },

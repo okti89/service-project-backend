@@ -144,6 +144,38 @@ class AccountDeletionTests(TestCase):
         self.assertEqual(response.status_code, 204)
         self.assertFalse(User.objects.filter(pk=self.user.pk).exists())
 
+    def test_inactive_user_can_delete_but_cannot_access_normal_profile(self):
+        self.user.is_active = False
+        self.user.save(update_fields=['is_active'])
+        self.assertEqual(self.client.get('/api/accounts/auth/me/').status_code, 401)
+        response = self.client.delete('/api/accounts/auth/delete-account/', {'password': 'delete-pass-123', 'confirmation': 'SİL'}, format='json')
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Token.objects.filter(pk=self.token.pk).exists())
+
+    def test_inactive_user_still_needs_correct_password_and_confirmation(self):
+        self.user.is_active = False
+        self.user.save(update_fields=['is_active'])
+        for data in [{'password': 'wrong', 'confirmation': 'SİL'}, {'password': 'delete-pass-123', 'confirmation': ''}]:
+            response = self.client.delete('/api/accounts/auth/delete-account/', data, format='json')
+            self.assertEqual(response.status_code, 400)
+            self.assertTrue(User.objects.filter(pk=self.user.pk).exists())
+
+    def test_expired_company_does_not_block_account_deletion(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from tenants.models import TenantMembership
+        TenantMembership.objects.create(tenant=self.tenant, plan='trial', premium_started_at=timezone.localdate() - timedelta(days=10), renewal_date=timezone.localdate() - timedelta(days=1))
+        self.tenant.memberships.update(premium_started_at=timezone.localdate() - timedelta(days=10), renewal_date=timezone.localdate() - timedelta(days=1))
+        self.assertFalse(self.tenant.subscription_info()['is_active'])
+        response = self.client.delete('/api/accounts/auth/delete-account/', {'password': 'delete-pass-123', 'confirmation': 'SİL'}, format='json')
+        self.assertEqual(response.status_code, 204)
+
+    def test_unknown_token_cannot_delete_account(self):
+        self.client.credentials(HTTP_AUTHORIZATION='Token invalid-token')
+        response = self.client.delete('/api/accounts/auth/delete-account/', {'password': 'delete-pass-123', 'confirmation': 'SİL'}, format='json')
+        self.assertEqual(response.status_code, 401)
+        self.assertTrue(User.objects.filter(pk=self.user.pk).exists())
+
 
 class PendingApprovalReminderTests(TestCase):
     @override_settings(PENDING_APPROVAL_REMINDER_EMAIL_ENABLED=False)

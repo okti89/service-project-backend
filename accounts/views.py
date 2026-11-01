@@ -21,6 +21,7 @@ from .serializers import (
     UserDeviceSerializer
     )
 from .models import User, UserDevice
+from .authentication import AccountDeletionTokenAuthentication
 logger = logging.getLogger(__name__)
 from .utils import (
     send_admin_registration_email,
@@ -266,6 +267,7 @@ class LoginView(APIView):
 
 class DeleteAccountView(APIView):
     """Permanently remove the authenticated user's account and personal records."""
+    authentication_classes = [AccountDeletionTokenAuthentication]
     permission_classes = [permissions.IsAuthenticated]
 
     def delete(self, request):
