@@ -35,6 +35,9 @@ from technicians.services import ensure_technician_profile
 
 #admin işlemleri
 class AdminLoginView(APIView):
+    # Credentials in the request body establish the new session. A stale token
+    # from a previous login must not reject the request before validation.
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
@@ -253,6 +256,7 @@ class RegisterView(APIView):
         return Response({"token": token.key, "user": user_serializer.data},status=status.HTTP_201_CREATED)
 
 class LoginView(APIView):
+    authentication_classes = []
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):

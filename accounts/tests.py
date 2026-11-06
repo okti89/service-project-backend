@@ -131,6 +131,48 @@ class AccountTenantIsolationTests(TestCase):
         self.assertEqual(response.status_code, 400)
 
 
+class PublicLoginSessionIsolationTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.tenant = Tenant.objects.create(name='Review company', code='review-company')
+        self.admin = User.objects.create_user(email='review-admin@example.com', password='review-pass-123', user_type='admin', is_staff=True, approval_status='approved', tenant=self.tenant)
+        self.technician = User.objects.create_user(email='review-tech@example.com', password='review-pass-123', user_type='technician', approval_status='approved', tenant=self.tenant)
+
+    def test_correct_credentials_ignore_invalid_or_malformed_previous_authorization(self):
+        for endpoint in ['/api/accounts/auth/login/', '/api/accounts/admin/login/']:
+            for header in ['Token expired-token', 'Token', 'Token one two']:
+                with self.subTest(endpoint=endpoint, header=header):
+                    response = self.client.post(endpoint, {'email': self.admin.email, 'password': 'review-pass-123'}, format='json', HTTP_AUTHORIZATION=header)
+                    self.assertEqual(response.status_code, 200)
+                    self.assertEqual(response.data['user']['id'], str(self.admin.pk))
+
+    def test_expired_previous_company_does_not_block_new_login(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        previous = Tenant.objects.create(name='Previous expired company', code='expired-review-company')
+        previous.start_trial()
+        previous.memberships.update(premium_started_at=timezone.localdate() - timedelta(days=10), renewal_date=timezone.localdate() - timedelta(days=1))
+        old_user = User.objects.create_user(email='old-review@example.com', password='old-pass', tenant=previous)
+        old_token = Token.objects.create(user=old_user)
+        self.assertFalse(previous.subscription_info()['is_active'])
+        for endpoint in ['/api/accounts/auth/login/', '/api/accounts/admin/login/']:
+            response = self.client.post(endpoint, {'email': self.admin.email, 'password': 'review-pass-123'}, format='json', HTTP_AUTHORIZATION=f'Token {old_token.key}', HTTP_X_TENANT_CODE=self.tenant.code)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.data['user']['tenant_code'], self.tenant.code)
+
+    def test_password_and_admin_role_are_still_required(self):
+        for endpoint in ['/api/accounts/auth/login/', '/api/accounts/admin/login/']:
+            response = self.client.post(endpoint, {'email': self.admin.email, 'password': 'wrong'}, format='json', HTTP_AUTHORIZATION='Token expired-token')
+            self.assertEqual(response.status_code, 400)
+        response = self.client.post('/api/accounts/admin/login/', {'email': self.technician.email, 'password': 'review-pass-123'}, format='json', HTTP_AUTHORIZATION='Token expired-token')
+        self.assertEqual(response.status_code, 400)
+
+    def test_protected_endpoints_still_reject_invalid_tokens(self):
+        self.client.credentials(HTTP_AUTHORIZATION='Token expired-token')
+        self.assertEqual(self.client.get('/api/accounts/auth/me/').status_code, 401)
+        self.assertEqual(self.client.get('/api/accounts/admin/users/').status_code, 401)
+
+
 class AccountDeletionTests(TestCase):
     def setUp(self):
         self.client = APIClient()

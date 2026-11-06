@@ -6,6 +6,8 @@ class SubscriptionAccessMiddleware:
     """Blocks protected API use for tenants whose trial or membership has ended."""
 
     allowed_paths = {
+        '/api/accounts/auth/login/',
+        '/api/accounts/admin/login/',
         '/api/accounts/auth/check/',
         '/api/accounts/auth/me/',
         '/api/accounts/auth/logout/',
