@@ -3,6 +3,7 @@ from rest_framework import serializers
 from .models import User, UserDevice
 from tenants.utils import resolve_tenant_from_request
 from config.models import CompanyConfig
+from core.login_diagnostics import mark_login_result
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ObjectDoesNotExist, ValidationError as DjangoValidationError
 import secrets
@@ -58,21 +59,27 @@ class AdminLoginSerializer(serializers.Serializer):
         password = attrs.get("password")
 
         request = self.context.get("request")
+        mark_login_result(request, None, email)
         tenant = resolve_tenant_from_request(request)
         if request_tenant_code_supplied(request) and not tenant:
+            mark_login_result(request, 'unknown_company', email)
             raise serializers.ValidationError({"detail": self.error_messages["invalid_credentials"]})
         user = find_user_by_email(email, tenant=tenant)
 
         if not user or not user.check_password(password):
+            mark_login_result(request, 'invalid_credentials', email)
             raise serializers.ValidationError({"detail": self.error_messages["invalid_credentials"]})
 
         if user.user_type != "admin":
+            mark_login_result(request, 'not_admin', email)
             raise serializers.ValidationError({"detail": self.error_messages["not_admin"]})
 
         if user.approval_status != "approved":
+            mark_login_result(request, 'approval_pending', email)
             raise serializers.ValidationError({"detail": self.error_messages["pending"]})
 
         if not user.is_active:
+            mark_login_result(request, 'inactive_account', email)
             raise serializers.ValidationError({"detail": self.error_messages["inactive"]})
 
         attrs["user"] = user
@@ -236,17 +243,21 @@ class LoginSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         request = self.context.get("request")
+        mark_login_result(request, None, attrs['email'])
         tenant = resolve_tenant_from_request(request)
         if request_tenant_code_supplied(request) and not tenant:
+            mark_login_result(request, 'unknown_company', attrs['email'])
             raise serializers.ValidationError({"detail": self.error_messages["invalid_credentials"]})
         user = find_user_by_email(attrs["email"], tenant=tenant)
         if not user and not request_tenant_code_supplied(request):
             user = find_user_by_email(attrs["email"], tenant=None)
 
         if not user or not user.check_password(attrs["password"]):
+            mark_login_result(request, 'invalid_credentials', attrs['email'])
             raise serializers.ValidationError({"detail": self.error_messages["invalid_credentials"]})
 
         if not user.is_active:
+            mark_login_result(request, 'inactive_account', attrs['email'])
             raise serializers.ValidationError({"detail": self.error_messages["inactive"]})
 
         attrs["user"] = user

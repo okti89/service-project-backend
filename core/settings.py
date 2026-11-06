@@ -94,6 +94,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'core.login_diagnostics.LoginDiagnosticsMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
@@ -108,6 +109,14 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = 'core.urls'
+
+# Fixed-field sign-in events only; no credentials or request bodies.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {'login_console': {'class': 'logging.StreamHandler'}},
+    'loggers': {'login_diagnostics': {'handlers': ['login_console'], 'level': 'INFO', 'propagate': False}},
+}
 
 TEMPLATES = [
     {
