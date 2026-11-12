@@ -141,6 +141,12 @@ class User(AbstractBaseUser, PermissionsMixin):
         return code
 
     def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None:
+            kwargs["update_fields"] = update_fields = frozenset(update_fields)
+            if update_fields == {"last_login"}:
+                # A login timestamp update cannot change tenant membership or use a seat.
+                return super().save(*args, **kwargs)
 
         # tenant auto set (minimal bırakıldı)
         if not self.tenant_id:
